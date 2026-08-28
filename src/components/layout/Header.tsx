@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Menu, X, Sparkles, BookOpen, FolderOpen, Calendar, ChevronRight, LayoutDashboard, LogIn } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Menu, X, Sparkles, BookOpen, FolderOpen, Calendar, ChevronRight, LayoutDashboard, LogIn, LogOut, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -17,7 +17,19 @@ export function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const pathname = usePathname();
-  const { user, loading } = useAuth();
+  const router = useRouter();
+  const { user, userRole, loading, signOut } = useAuth();
+
+  // Só Admin e Professor têm um painel pra administrar (editais/projetos
+  // pro Admin, os próprios projetos pro Professor) — Estudante não tem
+  // painel nenhum, então o link nem deve aparecer pra ele.
+  const painelHref = userRole === 'ADMIN' ? '/admin' : userRole === 'PROFESSOR' ? '/professor' : null;
+  const painelLabel = userRole === 'ADMIN' ? 'Admin' : 'Painel';
+
+  const handleLogout = async () => {
+    await signOut();
+    router.push('/');
+  };
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20);
@@ -120,19 +132,34 @@ export function Header() {
                   >
                     <span className="hidden md:inline">Meus Dados</span>
                   </Link>
-                  <Link
-                    href="/admin"
-                    title="Painel Admin"
+                  {painelHref && (
+                    <Link
+                      href={painelHref}
+                      title={painelLabel === 'Admin' ? 'Painel Admin' : 'Painel do Professor'}
+                      className={cn(
+                        'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-all',
+                        isScrolled || !isHome
+                          ? 'text-gray-600 hover:text-azul-eletrico hover:bg-gray-100'
+                          : 'text-white/80 hover:text-white hover:bg-white/10'
+                      )}
+                    >
+                      <LayoutDashboard className="w-4 h-4" />
+                      <span className="hidden md:inline">{painelLabel}</span>
+                    </Link>
+                  )}
+                  <button
+                    onClick={handleLogout}
+                    title="Sair"
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-all',
                       isScrolled || !isHome
-                        ? 'text-gray-600 hover:text-azul-eletrico hover:bg-gray-100'
+                        ? 'text-gray-600 hover:text-red-600 hover:bg-red-50'
                         : 'text-white/80 hover:text-white hover:bg-white/10'
                     )}
                   >
-                    <LayoutDashboard className="w-4 h-4" />
-                    <span className="hidden md:inline">Admin</span>
-                  </Link>
+                    <LogOut className="w-4 h-4" />
+                    <span className="hidden md:inline">Sair</span>
+                  </button>
                 </div>
               ) : (
                 <Link
@@ -201,6 +228,55 @@ export function Header() {
                 </Link>
               );
             })}
+
+            {/* Conta */}
+            {!loading && (
+              <div className="pt-2 mt-2 border-t border-gray-100 space-y-1">
+                {user ? (
+                  <>
+                    <Link
+                      href="/meus-dados"
+                      className="flex items-center gap-3 p-4 rounded-xl text-gray-700 hover:bg-gray-50 transition-all"
+                    >
+                      <div className="w-9 h-9 rounded-lg bg-gray-100 text-gray-500 flex items-center justify-center">
+                        <User className="w-5 h-5" />
+                      </div>
+                      <p className="font-semibold text-sm">Meus Dados</p>
+                    </Link>
+                    {painelHref && (
+                      <Link
+                        href={painelHref}
+                        className="flex items-center gap-3 p-4 rounded-xl text-gray-700 hover:bg-gray-50 transition-all"
+                      >
+                        <div className="w-9 h-9 rounded-lg bg-gray-100 text-gray-500 flex items-center justify-center">
+                          <LayoutDashboard className="w-5 h-5" />
+                        </div>
+                        <p className="font-semibold text-sm">{painelLabel === 'Admin' ? 'Painel Admin' : 'Painel do Professor'}</p>
+                      </Link>
+                    )}
+                    <button
+                      onClick={handleLogout}
+                      className="flex items-center gap-3 p-4 rounded-xl text-red-600 hover:bg-red-50 transition-all w-full"
+                    >
+                      <div className="w-9 h-9 rounded-lg bg-red-50 text-red-500 flex items-center justify-center">
+                        <LogOut className="w-5 h-5" />
+                      </div>
+                      <p className="font-semibold text-sm">Sair</p>
+                    </button>
+                  </>
+                ) : (
+                  <Link
+                    href="/admin/login"
+                    className="flex items-center gap-3 p-4 rounded-xl text-gray-700 hover:bg-gray-50 transition-all"
+                  >
+                    <div className="w-9 h-9 rounded-lg bg-gray-100 text-gray-500 flex items-center justify-center">
+                      <LogIn className="w-5 h-5" />
+                    </div>
+                    <p className="font-semibold text-sm">Entrar</p>
+                  </Link>
+                )}
+              </div>
+            )}
 
             <div className="pt-2 border-t border-gray-100">
               <Link

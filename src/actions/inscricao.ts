@@ -219,6 +219,12 @@ export async function criarInscricao(data: InscricaoFormData): Promise<ActionRes
     return { ok: true, data: { protocolo: inscricao.protocolo } };
   } catch (e) {
     console.error('Erro ao criar inscrição:', e);
+    // Achado real: `userId` inválido (não corresponde a nenhum User.id)
+    // já causou esse erro em produção — mensagem específica pra facilitar
+    // diagnóstico, em vez do genérico de sempre escondendo a causa.
+    if (String(e).includes('Inscricao_user_id_fkey')) {
+      return { ok: false, error: 'Sua sessão parece inválida. Saia e entre novamente antes de se inscrever.' };
+    }
     return { ok: false, error: 'Erro interno ao processar inscrição' };
   }
 }

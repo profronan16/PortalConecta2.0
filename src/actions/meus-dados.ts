@@ -3,6 +3,21 @@
 import { prisma } from '@/lib/prisma';
 import { translatePrismaError } from '@/lib/utils';
 import { verifySessionToken } from '@/lib/auth-helpers';
+import type { Prisma } from '@prisma/client';
+
+/**
+ * Filtro das inscrições de um usuário logado. Precisa cobrir dois casos:
+ * `email` (compatibilidade com inscrições antigas, feitas sem login, que só
+ * têm o e-mail salvo) e `user_id` (inscrições feitas logado, onde o e-mail
+ * do FORMULÁRIO pode ser diferente do e-mail da CONTA — a pessoa pode digitar
+ * um e-mail de contato pessoal em vez do institucional. Sem o `user_id`,
+ * essas inscrições nunca apareciam em "Meus Dados" porque a busca só
+ * comparava e-mails).
+ */
+async function whereInscricoesDoUsuario(email: string): Promise<Prisma.InscricaoWhereInput> {
+  const user = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+  return { OR: [{ email }, ...(user ? [{ user_id: user.id }] : [])] };
+}
 
 /**
  * Busca inscrições do estudante logado.
@@ -17,7 +32,7 @@ export async function getMinhasInscricoes(idToken: string) {
   if (!auth.ok) return [];
 
   const inscricoes = await prisma.inscricao.findMany({
-    where: { email: auth.email },
+    where: await whereInscricoesDoUsuario(auth.email),
     orderBy: { created_at: 'desc' },
     select: {
       id: true,
@@ -57,7 +72,7 @@ export async function exportMinhasInscricoesCSV(idToken: string): Promise<string
   if (!auth.ok) return headers.join(',');
 
   const inscricoes = await prisma.inscricao.findMany({
-    where: { email: auth.email },
+    where: await whereInscricoesDoUsuario(auth.email),
     orderBy: { created_at: 'desc' },
     select: {
       protocolo: true,
@@ -91,7 +106,7 @@ export async function solicitarExclusaoDados(idToken: string, motivo?: string) {
   try {
     // Atualizar todas as inscrições do usuário para desistente
     const result = await prisma.inscricao.updateMany({
-      where: { email: auth.email },
+      where: await whereInscricoesDoUsuario(auth.email),
       data: {
         status: 'desistente',
         observacao_interna: `Exclusão solicitada via "Meus dados" em ${new Date().toLocaleDateString('pt-BR')}${motivo ? `. Motivo: ${motivo}` : ''}`,

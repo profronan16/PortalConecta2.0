@@ -71,7 +71,7 @@ const ANOS_INICIO = Array.from({ length: 10 }, (_, i) => new Date().getFullYear(
 
 export default function InscricaoPage({ params }: { params: { slug: string } }) {
   const { slug } = params;
-  const { user } = useAuth();
+  const { user, supabaseUserId } = useAuth();
 
   const [projeto, setProjeto] = useState<ProjetoInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -154,7 +154,12 @@ export default function InscricaoPage({ params }: { params: { slug: string } }) 
       ciencia_regras: form.get('ciencia_regras') === 'on',
       consentimento_lgpd: form.get('consentimento_lgpd') === 'on',
       campos_extra: coletarRespostasExtra(form, perguntasExtra),
-      userId: user?.uid || undefined,
+      // `user.uid` é o UID do Firebase — não tem relação nenhuma com
+      // `User.id` (cuid interno do Prisma) que `Inscricao.user_id`
+      // referencia. Usar o UID do Firebase aqui sempre violava a foreign
+      // key pra qualquer usuário logado. `supabaseUserId` é o id correto,
+      // já resolvido pelo AuthContext via `ensureUser`.
+      userId: supabaseUserId || undefined,
       captchaToken: captchaToken ?? undefined,
     };
 
