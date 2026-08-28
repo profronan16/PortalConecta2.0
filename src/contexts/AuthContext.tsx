@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -66,31 +67,58 @@ async function extractEmail(firebaseUser: FirebaseUser): Promise<string | null> 
 // ── Provider ───────────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [supabaseUserId, setSupabaseUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // `undefined` = ainda não observamos nenhum estado (primeiro disparo do
+  // onAuthStateChanged, na carga inicial da página — não precisa de
+  // refresh, o servidor acabou de renderizar). Só refresca a partir da
+  // 2ª mudança real de identidade (login, logout, troca de conta).
+  const previousUid = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
+    const unsubscribe = onAuthStateChanged(auth, async (rawFirebaseUser) => {
+      let firebaseUser = rawFirebaseUser;
 
       // Sincroniza o cookie de sessão server-side (src/lib/session.ts) a
       // cada mudança de estado — login, logout, refresh de token. É o que
       // permite `admin/layout.tsx`/`professor/layout.tsx` verificarem quem
       // está logado ANTES de renderizar, em vez de só no client (achado S9).
       if (firebaseUser) {
+        let sessionOk = false;
         try {
           const idToken = await firebaseUser.getIdToken();
-          await fetch('/api/auth/session', {
+          const res = await fetch('/api/auth/session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ idToken }),
           });
-        } catch { /* não bloqueia o login se a criação do cookie falhar */ }
+          sessionOk = res.ok;
+        } catch {
+          sessionOk = false;
+        }
+
+        if (!sessionOk) {
+          // Achado real de segurança: se essa chamada falha (rede, ou o
+          // servidor recusa o token) e o navegador já tinha um cookie de
+          // sessão de OUTRA conta (ex.: um Admin testando, depois logando
+          // como estudante na mesma aba), o cookie antigo continuava
+          // válido — o servidor seguia autorizando como o usuário
+          // anterior enquanto o cliente já mostrava a conta nova. Falha
+          // fechado: limpa o cookie e desloga também no client, em vez de
+          // deixar alguém autenticado sem o servidor saber quem é de fato.
+          console.error('[AuthContext] Falha ao sincronizar o cookie de sessão — deslogando por segurança.');
+          await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
+          await firebaseSignOut(auth).catch(() => {});
+          firebaseUser = null;
+        }
       } else {
         fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
       }
+
+      setUser(firebaseUser);
 
       if (firebaseUser) {
         const email = await extractEmail(firebaseUser);
@@ -117,9 +145,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       setLoading(false);
+
+      // Descarta o Router Cache do Next.js sempre que a identidade muda
+      // (login, logout, troca de conta) — sem isso, layouts protegidos já
+      // renderizados (ex.: admin/(protected)/layout.tsx) podem ser
+      // reaproveitados em navegações client-side seguintes (via <Link> ou
+      // router.replace) mesmo depois de trocar de usuário na mesma aba,
+      // sem re-executar a checagem de sessão no servidor. Foi assim que um
+      // estudante conseguiu ver o painel admin: o layout já tinha sido
+      // renderizado autorizado pra sessão anterior e ficou em cache.
+      const currentUid = firebaseUser?.uid ?? null;
+      if (previousUid.current !== undefined && previousUid.current !== currentUid) {
+        router.refresh();
+      }
+      previousUid.current = currentUid;
     });
     return unsubscribe;
-  }, []);
+  }, [router]);
 
   // ── signIn email/senha ───────────────────────────────────────────────────────
   const signIn = async (email: string, password: string) => {
