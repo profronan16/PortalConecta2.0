@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ['pdf-parse', 'sanitize-html'],
+    serverComponentsExternalPackages: ['pdf-parse'],
   },
   images: {
     remotePatterns: [
