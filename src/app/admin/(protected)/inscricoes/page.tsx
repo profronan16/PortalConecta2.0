@@ -8,6 +8,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { listMyProjetos, listInscricoes, updateInscricaoStatus, exportInscricoesCSV } from '@/actions/professor';
 import { formatDateShort } from '@/lib/utils';
+import { parsePerguntasExtra, resolverRespostasExtra } from '@/lib/formulario-extra';
 import { Prisma } from '@prisma/client';
 import { useToast } from '@/components/ui/toast';
 
@@ -269,6 +270,16 @@ export default function AdminInscricoesPage() {
                 <div key={field.label}>
                   <p className="text-xs text-gray-500 font-medium">{field.label}</p>
                   <p className="text-sm text-gray-700">{field.value}</p>
+                </div>
+              ))}
+
+              {resolverRespostasExtra(
+                parsePerguntasExtra(projetos.find((p) => p.id === selectedProjeto)?.formulario_extra),
+                selectedInscricao.campos_extra
+              ).map((r) => (
+                <div key={r.pergunta} className="pt-3 border-t border-gray-100 first:border-t-0 first:pt-0">
+                  <p className="text-xs text-gray-500 font-medium">{r.pergunta}</p>
+                  <p className="text-sm text-gray-700">{r.resposta}</p>
                 </div>
               ))}
 

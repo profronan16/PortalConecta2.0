@@ -1,8 +1,12 @@
 'use client';
 
 import React, { useEffect, useState, useTransition, useMemo } from 'react';
-import { Plus, Pencil, Trash2, X, FolderOpen, AlertCircle, ExternalLink, Newspaper, Search, Eye, EyeOff } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, FolderOpen, AlertCircle, ExternalLink, Newspaper, Search, Eye, EyeOff, UserCheck, UserX, Loader2 } from 'lucide-react';
 import { listProjetos, createProjeto, updateProjeto, deleteProjeto, toggleProjetoPublicacao, type ProjetoFormData } from '@/actions/admin';
+import { toggleInscricoes, abrirInscricoes } from '@/actions/professor';
+import { AbrirInscricoesModal } from '@/components/ui/AbrirInscricoesModal';
+import { FormularioExtraEditor } from '@/components/ui/FormularioExtraEditor';
+import { parsePerguntasExtra, type PerguntaExtra } from '@/lib/formulario-extra';
 import { getStatusLabel, getStatusColor } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -16,7 +20,7 @@ const EMPTY_FORM: ProjetoFormData = {
   nome: '', coordenador: '', coordenadorEmail: '', viceCoordenadorNome: '', viceCoordenadorEmail: '', area: '', descricao: '',
   dataInicio: '', servidores: '', alunos: '', observacao: '',
   status: 'EM_EXECUCAO', logoUrl: '', corPrimaria: '#2F52D3',
-  email: '', instagram: '', site: '', destaque: false, adminEmails: '',
+  email: '', instagram: '', site: '', destaque: false, adminEmails: '', formularioExtra: [],
 };
 
 export default function AdminProjetosPage() {
@@ -29,6 +33,8 @@ export default function AdminProjetosPage() {
   const [isPending, startTransition] = useTransition();
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [abrirModalProjetoId, setAbrirModalProjetoId] = useState<string | null>(null);
+  const [togglingInscricoesId, setTogglingInscricoesId] = useState<string | null>(null);
 
   // ── Filtros ──
   const [searchNome, setSearchNome] = useState('');
@@ -83,6 +89,7 @@ export default function AdminProjetosPage() {
       site: projeto.site ?? '',
       destaque: projeto.destaque,
       adminEmails: projeto.admins.map(a => a.email).join(', '),
+      formularioExtra: parsePerguntasExtra(projeto.formulario_extra),
     });
     setError('');
     setPanelOpen(true);
@@ -99,6 +106,52 @@ export default function AdminProjetosPage() {
       if (result.ok) load();
       else setError(result.error);
     });
+  };
+
+  // Mesma action que o professor coordenador usa (src/actions/professor.ts)
+  // — já permite o Administrador Geral por causa de `temAcessoAoProjeto`,
+  // só faltava um jeito de acioná-la fora do /professor (rota que o ADMIN
+  // nem consegue acessar, ver admin/(protected)/layout.tsx).
+  const handleToggleInscricoes = (projeto: Projeto) => {
+    if (!user?.email) return;
+    // Abrir exige configurar o prazo primeiro (pop-up); fechar não precisa.
+    if (!projeto.inscricoes_abertas) {
+      setAbrirModalProjetoId(projeto.id);
+      return;
+    }
+
+    // Atualização otimista: muda o ícone na hora (sem esperar o servidor) e
+    // só corrige a linha afetada em memória — em vez de `load()`, que
+    // recarregava TODOS os projetos com TODAS as colunas de novo (listProjetos
+    // não usa `select`), fazendo o botão parecer travado. Reverte se falhar.
+    setTogglingInscricoesId(projeto.id);
+    setProjetos((prev) => prev.map((p) =>
+      p.id === projeto.id ? { ...p, inscricoes_abertas: false, status: 'ATIVO' } : p
+    ));
+
+    toggleInscricoes(projeto.id, user.email)
+      .then((result) => {
+        if (!result.ok) {
+          setProjetos((prev) => prev.map((p) =>
+            p.id === projeto.id ? { ...p, inscricoes_abertas: true, status: 'INSCRICOES_ABERTAS' } : p
+          ));
+          setError(result.error);
+        }
+      })
+      .finally(() => setTogglingInscricoesId(null));
+  };
+
+  const handleConfirmAbrirInscricoes = async (data: { inscricaoInicio?: string; inscricaoFim: string }) => {
+    if (!abrirModalProjetoId || !user?.email) return;
+    const result = await abrirInscricoes(abrirModalProjetoId, user.email, data);
+    if (result.ok) {
+      setProjetos((prev) => prev.map((p) =>
+        p.id === abrirModalProjetoId ? { ...p, inscricoes_abertas: true, status: 'INSCRICOES_ABERTAS' } : p
+      ));
+      setAbrirModalProjetoId(null);
+    } else {
+      setError(result.error);
+    }
   };
 
   const confirmDelete = async () => {
@@ -249,6 +302,18 @@ export default function AdminProjetosPage() {
                         {p.review_status === 'PUBLICADO' ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     )}
+                    {isMaster && (
+                      <button
+                        onClick={() => handleToggleInscricoes(p)}
+                        disabled={togglingInscricoesId === p.id}
+                        className={`p-2 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-60 disabled:cursor-wait ${p.inscricoes_abertas ? 'text-green-600' : 'text-gray-400 hover:text-green-600'}`}
+                        title={p.inscricoes_abertas ? 'Fechar inscrições' : 'Abrir inscrições'}
+                      >
+                        {togglingInscricoesId === p.id
+                          ? <Loader2 className="w-4 h-4 animate-spin" />
+                          : p.inscricoes_abertas ? <UserCheck className="w-4 h-4" /> : <UserX className="w-4 h-4" />}
+                      </button>
+                    )}
                     <a href={`/admin/posts?projetoId=${p.id}`} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-ciano-claro transition-colors" title="Gerenciar Posts">
                       <Newspaper className="w-4 h-4" />
                     </a>
@@ -328,6 +393,18 @@ export default function AdminProjetosPage() {
                               title={p.review_status === 'PUBLICADO' ? 'Despublicar' : 'Publicar'}
                             >
                               {p.review_status === 'PUBLICADO' ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                          {isMaster && (
+                            <button
+                              onClick={() => handleToggleInscricoes(p)}
+                              disabled={togglingInscricoesId === p.id}
+                              className={`p-1.5 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-60 disabled:cursor-wait ${p.inscricoes_abertas ? 'text-green-600' : 'text-gray-400 hover:text-green-600'}`}
+                              title={p.inscricoes_abertas ? 'Fechar inscrições' : 'Abrir inscrições'}
+                            >
+                              {togglingInscricoesId === p.id
+                                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                : p.inscricoes_abertas ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
                             </button>
                           )}
                           <a href={`/admin/posts?projetoId=${p.id}`} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-ciano-claro transition-colors" title="Gerenciar Posts">
@@ -496,6 +573,20 @@ export default function AdminProjetosPage() {
                       )}
                     </div>
                   </div>
+
+                  {/* Formulário de Inscrição */}
+                  <div className="col-span-2 space-y-3 mt-2">
+                    <div className="border-b pb-2">
+                      <h3 className="text-sm font-bold text-gray-900">Formulário de Inscrição</h3>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Perguntas extras exibidas no formulário público de inscrição, além dos campos padrão (nome, e-mail, curso etc.).
+                      </p>
+                    </div>
+                    <FormularioExtraEditor
+                      value={form.formularioExtra ?? []}
+                      onChange={(v: PerguntaExtra[]) => set('formularioExtra', v)}
+                    />
+                  </div>
                 </div>
                 {error && (
                   <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-xs">
@@ -526,6 +617,13 @@ export default function AdminProjetosPage() {
         onConfirm={confirmDelete}
         onCancel={() => setDeleteId(null)}
       />
+
+      {abrirModalProjetoId && (
+        <AbrirInscricoesModal
+          onClose={() => setAbrirModalProjetoId(null)}
+          onConfirm={handleConfirmAbrirInscricoes}
+        />
+      )}
     </div>
   );
 }

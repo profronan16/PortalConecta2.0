@@ -1,10 +1,10 @@
 import React from 'react';
 import Link from 'next/link';
-import { FolderOpen, ChevronRight, Search, Filter, Users, ArrowRight, TrendingUp, Sparkles } from 'lucide-react';
-import { getStatusLabel, getStatusColor } from '@/lib/utils';
+import { FolderOpen, ChevronRight, TrendingUp, Sparkles, ArrowRight } from 'lucide-react';
 import type { Metadata } from 'next';
 import { prisma } from '@/lib/prisma';
 import { withCache } from '@/lib/cache';
+import { ProjetosExplorer } from './ProjetosExplorer';
 
 export const revalidate = 300; // Revalidar a cada 5 minutos
 
@@ -28,9 +28,6 @@ export default async function ProjetosPage() {
       destaque: true,
     },
   }), 5 * 60 * 1000);
-
-  const areas = ['Todas', ...Array.from(new Set(projetos.map((p) => p.area))).sort()];
-  const statusOptions = ['Todos', 'ATIVO', 'EM_EXECUCAO', 'ENCERRADO', 'SUSPENSO', 'INSCRICOES_ABERTAS', 'SEM_VAGAS'];
 
   const emExecucao = projetos.filter((p) => p.status === 'EM_EXECUCAO').length;
   const inscricoesAbertas = projetos.filter((p) => p.status === 'INSCRICOES_ABERTAS').length;
@@ -77,132 +74,7 @@ export default async function ProjetosPage() {
 
       {/* Conteúdo */}
       <div className="container mx-auto px-4 max-w-7xl py-10">
-        {/* Filtros */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-8">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="search"
-              placeholder="Buscar projetos..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-azul-eletrico focus:border-transparent"
-            />
-          </div>
-          <div className="flex gap-3">
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-gray-400" />
-              <select className="pl-3 pr-8 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-azul-eletrico bg-white">
-                <option value="Todas">Área: Todas</option>
-                {areas.slice(1).map((a) => <option key={a} value={a}>{a}</option>)}
-              </select>
-            </div>
-            <select className="pl-3 pr-8 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-azul-eletrico bg-white">
-              <option value="Todos">Status: Todos</option>
-              {statusOptions.slice(1).map((s) => <option key={s} value={s}>{getStatusLabel(s)}</option>)}
-            </select>
-          </div>
-        </div>
-
-        {/* Projetos Destaque */}
-        <div className="mb-10">
-          <div className="flex items-center gap-2 mb-5">
-            <Sparkles className="w-5 h-5 text-dourado-ifizinha" />
-            <h2 className="font-bold text-gray-900 text-lg">Projetos em Destaque</h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {projetos.filter((p) => p.destaque).map((projeto) => (
-              <Link key={projeto.id} href={`/projetos/${projeto.slug}`} className="group block">
-                <div className="bg-white rounded-2xl border border-gray-100 hover:border-gray-200 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 overflow-hidden h-full flex flex-col">
-                  {/* Color header */}
-                  <div className="h-24 relative flex items-end p-4" style={{ background: `linear-gradient(135deg, ${projeto.corPrimaria} 0%, ${projeto.corPrimaria}cc 100%)` }}>
-                    <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center text-white font-black text-2xl border border-white/30">
-                      {projeto.nome.charAt(0)}
-                    </div>
-                    <div className="ml-auto">
-                      <span className="text-white/80 text-xs bg-black/20 rounded-full px-2.5 py-1 font-medium">
-                        {getStatusLabel(projeto.status)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="p-5 flex-1 flex flex-col">
-                    <h3 className="font-bold text-gray-900 text-base leading-snug mb-1 group-hover:text-azul-eletrico transition-colors">
-                      {projeto.nome}
-                    </h3>
-                    <p className="text-sm text-gray-500 mb-2 flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5" />
-                      {projeto.coordenador}
-                    </p>
-                    <p className="text-sm text-gray-500 leading-relaxed flex-1 line-clamp-2">{projeto.descricao}</p>
-                    <div className="mt-4 flex items-center justify-between">
-                      <span
-                        className="inline-flex px-3 py-1 rounded-full text-xs font-semibold text-white"
-                        style={{ backgroundColor: projeto.corPrimaria }}
-                      >
-                        {projeto.area}
-                      </span>
-                      <div className="flex items-center gap-1 text-xs font-semibold text-azul-eletrico group-hover:gap-2 transition-all">
-                        Saiba mais
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        {/* Todos os projetos */}
-        <div>
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="font-bold text-gray-900 text-lg">Todos os Projetos ({projetos.length})</h2>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {projetos.map((projeto) => (
-              <Link key={projeto.id} href={`/projetos/${projeto.slug}`} className="group block">
-                <div className="bg-white rounded-2xl border border-gray-100 hover:border-gray-200 hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 overflow-hidden">
-                  <div className="h-2 w-full" style={{ backgroundColor: projeto.corPrimaria }} />
-                  <div className="p-4">
-                    <div className="flex items-start gap-3 mb-3">
-                      <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-base flex-shrink-0 shadow-sm"
-                        style={{ backgroundColor: projeto.corPrimaria }}
-                      >
-                        {projeto.nome.charAt(0)}
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="font-semibold text-gray-900 text-sm leading-snug group-hover:text-azul-eletrico transition-colors line-clamp-2">
-                          {projeto.nome}
-                        </h3>
-                        <p className="text-xs text-gray-400 mt-0.5 truncate">{projeto.coordenador}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span
-                        className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium text-white"
-                        style={{ backgroundColor: projeto.corPrimaria }}
-                      >
-                        {projeto.area}
-                      </span>
-                      <span className={`text-xs font-medium flex items-center gap-1 ${
-                        projeto.status === 'EM_EXECUCAO' ? 'text-green-600' :
-                        projeto.status === 'ATIVO' ? 'text-blue-600' :
-                        'text-gray-500'
-                      }`}>
-                        <div className={`w-1.5 h-1.5 rounded-full ${
-                          projeto.status === 'EM_EXECUCAO' ? 'bg-green-500 animate-pulse' :
-                          projeto.status === 'ATIVO' ? 'bg-blue-500' :
-                          'bg-gray-400'
-                        }`} />
-                        {getStatusLabel(projeto.status)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
+        <ProjetosExplorer projetos={projetos} />
 
         {/* CTA Participe */}
         <div className="mt-12 bg-gradient-to-br from-azul-eletrico/5 via-roxo-luminoso/5 to-rosa-vibrante/5 rounded-3xl border border-gray-100 p-8 md:p-10 text-center">

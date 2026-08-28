@@ -19,6 +19,7 @@ export async function GET(request: Request) {
       inscricao_fim: true,
       vagasBolsista: true,
       vagasVoluntario: true,
+      formulario_extra: true,
       vagas: {
         where: { status: 'ABERTA' },
         orderBy: { createdAt: 'asc' },

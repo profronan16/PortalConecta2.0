@@ -12,6 +12,9 @@ import { listPosts, createPost, updatePost, deletePost, getProjetoDetalhes } fro
 import { formatDateShort } from '@/lib/utils';
 import { Prisma } from '@prisma/client';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { RichTextEditor } from '@/components/ui/RichTextEditor';
+
+const isConteudoVazio = (html: string) => html.replace(/<[^>]*>/g, '').trim().length === 0;
 
 type Post = Prisma.PostGetPayload<{}>;
 
@@ -52,7 +55,7 @@ export default function ProfessorPostsPage({ params }: { params: { id: string } 
   };
 
   const handleSave = async () => {
-    if (!user?.email || !form.titulo.trim() || !form.conteudo.trim()) return;
+    if (!user?.email || !form.titulo.trim() || isConteudoVazio(form.conteudo)) return;
     setSaving(true);
     try {
       if (editingPost) {
@@ -159,13 +162,7 @@ export default function ProfessorPostsPage({ params }: { params: { id: string } 
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Conteúdo</label>
-                <textarea
-                  value={form.conteudo}
-                  onChange={(e) => setForm({ ...form, conteudo: e.target.value })}
-                  rows={10}
-                  className="w-full px-4 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-azul-eletrico resize-none"
-                  placeholder="Conteúdo do post (suporta markdown)"
-                />
+                <RichTextEditor value={form.conteudo} onChange={(html) => setForm({ ...form, conteudo: html })} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
@@ -195,7 +192,7 @@ export default function ProfessorPostsPage({ params }: { params: { id: string } 
               </button>
               <button
                 onClick={handleSave}
-                disabled={saving || !form.titulo.trim() || !form.conteudo.trim()}
+                disabled={saving || !form.titulo.trim() || isConteudoVazio(form.conteudo)}
                 className="flex items-center gap-2 px-4 py-2 bg-azul-eletrico text-white rounded-xl text-sm font-medium hover:bg-azul-eletrico/90 transition-colors disabled:opacity-50"
               >
                 <Save className="w-4 h-4" />

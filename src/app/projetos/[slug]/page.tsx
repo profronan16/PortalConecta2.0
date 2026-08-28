@@ -6,6 +6,8 @@ import {
   BookOpen, Calendar, ArrowRight, Image as ImageIcon, HelpCircle,
 } from 'lucide-react';
 import { getStatusLabel, getStatusColor } from '@/lib/utils';
+import { stripHtml } from '@/lib/rich-text';
+import { SafeHtml } from '@/components/ui/SafeHtml';
 import { prisma } from '@/lib/prisma';
 import type { Metadata } from 'next';
 
@@ -16,7 +18,7 @@ type Params = { slug: string };
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const projeto = await prisma.projeto.findUnique({ where: { slug: params.slug } });
   if (!projeto) return { title: 'Projeto não encontrado' };
-  return { title: projeto.nome, description: projeto.descricao?.slice(0, 160) || '' };
+  return { title: projeto.nome, description: stripHtml(projeto.descricao).slice(0, 160) };
 }
 
 export default async function ProjetoPage({ params }: { params: Params }) {
@@ -58,8 +60,6 @@ export default async function ProjetoPage({ params }: { params: Params }) {
       resumoCurto: true,
     },
   });
-
-  const paragrafos = projeto.descricao ? projeto.descricao.split('\n\n') : [];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -120,12 +120,11 @@ export default async function ProjetoPage({ params }: { params: Params }) {
             {/* Sobre */}
             <div className="bg-white rounded-2xl border border-gray-100 p-6">
               <h2 className="font-bold text-gray-900 text-lg mb-4">Sobre o Projeto</h2>
-              {paragrafos.length > 0 ? (
-                <div className="space-y-4">
-                  {paragrafos.map((p, i) => (
-                    <p key={i} className="text-gray-700 leading-relaxed">{p}</p>
-                  ))}
-                </div>
+              {projeto.descricao ? (
+                <SafeHtml
+                  html={projeto.descricao}
+                  className="prose prose-sm sm:prose-base max-w-none prose-p:text-gray-700 prose-headings:text-gray-900"
+                />
               ) : (
                 <p className="text-gray-500 italic">Nenhuma descrição informada para este projeto.</p>
               )}
@@ -189,7 +188,11 @@ export default async function ProjetoPage({ params }: { params: Params }) {
                 <h2 className="font-bold text-gray-900 text-2xl mb-6">Últimas Atualizações</h2>
                 <div className="space-y-4">
                   {projeto.posts.map((post) => (
-                    <div key={post.id} className="bg-white rounded-2xl border border-gray-100 p-5 hover:border-gray-200 transition-all flex flex-col sm:flex-row gap-5">
+                    <Link
+                      key={post.id}
+                      href={`/projetos/${projeto.slug}/posts/${post.slug}`}
+                      className="group bg-white rounded-2xl border border-gray-100 p-5 hover:border-gray-200 hover:shadow-md transition-all flex flex-col sm:flex-row gap-5"
+                    >
                       {post.imagemUrl ? (
                         <div className="w-full sm:w-48 h-32 flex-shrink-0 rounded-xl overflow-hidden bg-gray-100">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -205,10 +208,13 @@ export default async function ProjetoPage({ params }: { params: Params }) {
                           <Calendar className="w-3.5 h-3.5" />
                           {new Date(post.createdAt).toLocaleDateString('pt-BR')}
                         </div>
-                        <h3 className="font-bold text-gray-900 text-lg mb-2 leading-tight">{post.titulo}</h3>
+                        <h3 className="font-bold text-gray-900 text-lg mb-2 leading-tight group-hover:text-azul-eletrico transition-colors">{post.titulo}</h3>
                         {post.resumo && <p className="text-sm text-gray-500 line-clamp-2 mb-3">{post.resumo}</p>}
+                        <span className="text-xs font-semibold text-azul-eletrico inline-flex items-center gap-1">
+                          Ler mais <ArrowRight className="w-3 h-3" />
+                        </span>
                       </div>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               </div>

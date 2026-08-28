@@ -9,6 +9,8 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { listMyProjetos, updateMyProjeto, type MyProjetoFormData } from '@/actions/professor';
 import { getStatusLabel, getStatusColor, formatDateShort } from '@/lib/utils';
+import { FormularioExtraEditor } from '@/components/ui/FormularioExtraEditor';
+import { parsePerguntasExtra, type PerguntaExtra } from '@/lib/formulario-extra';
 
 type Projeto = Awaited<ReturnType<typeof listMyProjetos>>[number];
 
@@ -24,7 +26,7 @@ export default function ProfessorProjetosPage() {
   const [form, setForm] = useState<MyProjetoFormData>({
     nome: '', coordenador: '', area: '', descricao: '',
     status: 'EM_EXECUCAO', corPrimaria: '#2F52D3',
-    email: '', instagram: '', site: '',
+    email: '', instagram: '', site: '', formularioExtra: [],
   });
   const [error, setError] = useState('');
   const [isPending, startTransition] = useTransition();
@@ -56,6 +58,7 @@ export default function ProfessorProjetosPage() {
       email: projeto.email ?? '',
       instagram: projeto.instagram ?? '',
       site: projeto.site ?? '',
+      formularioExtra: parsePerguntasExtra(projeto.formulario_extra),
     });
     setError('');
     setPanelOpen(true);
@@ -230,6 +233,19 @@ export default function ProfessorProjetosPage() {
                   <Field label="Site">
                     <input type="url" className="input-field" value={form.site} onChange={(e) => setForm((f) => ({ ...f, site: e.target.value }))} />
                   </Field>
+                </div>
+
+                <div className="pt-2">
+                  <div className="border-b pb-2 mb-3">
+                    <h3 className="text-sm font-bold text-gray-900">Formulário de Inscrição</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Perguntas extras exibidas no formulário público de inscrição do seu projeto, além dos campos padrão (nome, e-mail, curso etc.).
+                    </p>
+                  </div>
+                  <FormularioExtraEditor
+                    value={form.formularioExtra ?? []}
+                    onChange={(v: PerguntaExtra[]) => setForm((f) => ({ ...f, formularioExtra: v }))}
+                  />
                 </div>
 
                 {error && (

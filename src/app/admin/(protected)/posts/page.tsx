@@ -6,6 +6,7 @@ import { listPosts, createPost, updatePost, deletePost, listProjetos, type PostF
 import { useAuth } from '@/contexts/AuthContext';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { RichTextEditor } from '@/components/ui/RichTextEditor';
 
 type Post = Awaited<ReturnType<typeof listPosts>>[number];
 type Projeto = Awaited<ReturnType<typeof listProjetos>>[number];
@@ -67,6 +68,10 @@ function AdminPostsContent() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault(); setError('');
     if (!user?.email) { setError('Não autenticado'); return; }
+    if (form.conteudo.replace(/<[^>]*>/g, '').trim().length === 0) {
+      setError('O texto principal do post é obrigatório');
+      return;
+    }
     startTransition(async () => {
       const r = editing
         ? await updatePost(editing.id, form, user.email!)
@@ -226,11 +231,8 @@ function AdminPostsContent() {
                 <div className="space-y-4 pt-2">
                   <h3 className="text-sm font-bold text-gray-900 border-b pb-2">Conteúdo</h3>
                   <div>
-                    <label className="label-field flex items-center justify-between">
-                      <span>Texto Principal <span className="text-red-500">*</span></span>
-                      <span className="text-xs font-normal text-gray-400">Suporta formatação Markdown (ex: **negrito**)</span>
-                    </label>
-                    <textarea className="input-field min-h-[160px] resize-y font-mono text-sm" value={form.conteudo} onChange={(e) => set('conteudo', e.target.value)} required placeholder="Escreva o conteúdo do post aqui..." />
+                    <label className="label-field">Texto Principal <span className="text-red-500">*</span></label>
+                    <RichTextEditor value={form.conteudo} onChange={(html) => set('conteudo', html)} />
                   </div>
                   <div>
                     <label className="label-field">Resumo <span className="text-gray-400 font-normal text-xs ml-1">(Opcional, usado em cards)</span></label>

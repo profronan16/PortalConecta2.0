@@ -5,6 +5,8 @@ import { slugify, translatePrismaError } from '@/lib/utils';
 import { enviarAtualizacaoStatus } from '@/lib/email';
 import { cache } from '@/lib/cache';
 import { sincronizarProjetoSintetico } from '@/lib/projeto-sintetico';
+import { sanitizeHtml } from '@/lib/rich-text';
+import type { PerguntaExtra } from '@/lib/formulario-extra';
 import { isAdministradorGeral, projetosAcessiveis, temAcessoAoProjeto, whereUsuarioTemAcessoAoProjeto } from '@/lib/permissions';
 import type { Prisma } from '@prisma/client';
 
@@ -20,6 +22,7 @@ export type MyProjetoFormData = {
   email?: string;
   instagram?: string;
   site?: string;
+  formularioExtra?: PerguntaExtra[];
 };
 
 export async function getProfessorStats(email: string) {
@@ -118,12 +121,46 @@ export async function updateMyProjeto(projetoId: string, data: MyProjetoFormData
         email: data.email || null,
         instagram: data.instagram || null,
         site: data.site || null,
+        ...(data.formularioExtra !== undefined ? { formulario_extra: data.formularioExtra } : {}),
       },
     });
     cache.invalidate('chat:');
     await sincronizarProjetoSintetico(projetoId).catch(console.error);
 
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: translatePrismaError(e) };
+  }
+}
+
+/**
+ * Abre as inscrições com prazo definido — diferente de `toggleInscricoes`
+ * (que só alterna o estado atual), esta sempre define `inscricao_fim`
+ * explicitamente. Sem isso, não existia em lugar nenhum do painel uma
+ * forma de definir o prazo final de inscrição: o campo existe no banco e
+ * é checado em `verificarInscricoesAbertas`, mas ficava sempre `null`.
+ */
+export async function abrirInscricoes(
+  projetoId: string,
+  userEmail: string,
+  data: { inscricaoInicio?: string; inscricaoFim: string }
+): Promise<ActionResult<{ inscricoes_abertas: boolean }>> {
+  try {
+    if (!(await temAcessoAoProjeto(projetoId, userEmail))) return { ok: false, error: 'Acesso negado' };
+    if (!data.inscricaoFim) return { ok: false, error: 'Informe o prazo final das inscrições' };
+
+    await prisma.projeto.update({
+      where: { id: projetoId },
+      data: {
+        inscricoes_abertas: true,
+        status: 'INSCRICOES_ABERTAS',
+        inscricao_inicio: data.inscricaoInicio ? new Date(data.inscricaoInicio) : new Date(),
+        inscricao_fim: new Date(data.inscricaoFim),
+      },
+    });
+    await sincronizarProjetoSintetico(projetoId).catch(console.error);
+
+    return { ok: true, data: { inscricoes_abertas: true } };
   } catch (e) {
     return { ok: false, error: translatePrismaError(e) };
   }
@@ -405,7 +442,7 @@ export async function createPost(projetoId: string, data: PostFormData, userEmai
       data: {
         titulo: data.titulo,
         slug,
-        conteudo: data.conteudo,
+        conteudo: sanitizeHtml(data.conteudo),
         resumo: data.resumo || null,
         imagemUrl: data.imagemUrl || null,
         status: data.status,
@@ -431,7 +468,7 @@ export async function updatePost(postId: string, data: PostFormData, userEmail: 
       where: { id: postId },
       data: {
         titulo: data.titulo,
-        conteudo: data.conteudo,
+        conteudo: sanitizeHtml(data.conteudo),
         resumo: data.resumo || null,
         imagemUrl: data.imagemUrl || null,
         status: data.status,

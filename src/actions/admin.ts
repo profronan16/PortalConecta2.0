@@ -6,6 +6,8 @@ import { cache } from '@/lib/cache';
 import { derivarEventosEdital, derivarEventosProjeto } from '@/lib/evento-helpers';
 import { LIMPEZA_TABLES } from '@/lib/limpeza-tables';
 import { sincronizarProjetoSintetico, removerProjetoSintetico } from '@/lib/projeto-sintetico';
+import { sanitizeHtml } from '@/lib/rich-text';
+import type { PerguntaExtra } from '@/lib/formulario-extra';
 import {
   isAdministradorGeral,
   isCoordenadorOuViceDoProjeto,
@@ -248,6 +250,7 @@ export type ProjetoFormData = {
   site?: string;
   destaque?: boolean;
   adminEmails?: string;
+  formularioExtra?: PerguntaExtra[];
 };
 
 export async function listProjetos(userEmail?: string, userRole?: string) {
@@ -352,6 +355,7 @@ export async function createProjeto(data: ProjetoFormData, callerEmail: string):
         instagram: dbData.instagram ?? null,
         site: dbData.site ?? null,
         destaque: dbData.destaque ?? false,
+        formulario_extra: dbData.formularioExtra ?? [],
         // Mesma decisão do createEdital: sem fluxo de revisão no admin hoje,
         // deixar em RASCUNHO (default do schema) faz o projeto nunca aparecer
         // publicamente sem aviso nenhum.
@@ -404,6 +408,7 @@ export async function updateProjeto(id: string, data: Partial<ProjetoFormData>, 
     if (data.instagram !== undefined) updateData.instagram = data.instagram;
     if (data.site !== undefined) updateData.site = data.site;
     if (data.destaque !== undefined) updateData.destaque = data.destaque;
+    if (data.formularioExtra !== undefined) updateData.formulario_extra = data.formularioExtra;
 
     await prisma.projeto.update({
       where: { id },
@@ -526,7 +531,7 @@ export async function createPost(data: PostFormData, authorEmail: string): Promi
       data: {
         titulo: data.titulo,
         slug,
-        conteudo: data.conteudo,
+        conteudo: sanitizeHtml(data.conteudo),
         resumo: data.resumo ?? null,
         imagemUrl: data.imagemUrl ?? null,
         videoUrl: data.videoUrl ?? null,
@@ -562,6 +567,7 @@ export async function updatePost(id: string, data: Partial<PostFormData>, userEm
       where: { id },
       data: {
         ...data,
+        conteudo: data.conteudo !== undefined ? sanitizeHtml(data.conteudo) : undefined,
         slug: data.titulo ? slugify(data.titulo) : undefined,
       },
     });

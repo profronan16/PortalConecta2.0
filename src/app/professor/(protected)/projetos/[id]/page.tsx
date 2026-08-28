@@ -6,14 +6,16 @@ import { useRouter } from 'next/navigation';
 import {
   ChevronRight, Users, FolderOpen, Calendar, Mail,
   Download, Search, Filter, AlertCircle, CheckCircle,
-  Clock, XCircle, Eye, ArrowLeft, FileText, Plus, Trash2, Briefcase,
+  Clock, XCircle, Eye, ArrowLeft, FileText, Plus, Trash2, Briefcase, Loader2,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  getProjetoDetalhes, listInscricoes, updateInscricaoStatus, exportInscricoesCSV, toggleInscricoes,
+  getProjetoDetalhes, listInscricoes, updateInscricaoStatus, exportInscricoesCSV, toggleInscricoes, abrirInscricoes,
   listVagas, createVaga, updateVaga, deleteVaga, type VagaFormData,
 } from '@/actions/professor';
 import { getStatusLabel, getStatusColor, formatDateShort } from '@/lib/utils';
+import { parsePerguntasExtra, resolverRespostasExtra } from '@/lib/formulario-extra';
+import { AbrirInscricoesModal } from '@/components/ui/AbrirInscricoesModal';
 import { Prisma } from '@prisma/client';
 import { useToast } from '@/components/ui/toast';
 
@@ -33,6 +35,8 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
   const [search, setSearch] = useState('');
   const [showVagaForm, setShowVagaForm] = useState(false);
   const [editingVaga, setEditingVaga] = useState<Vaga | null>(null);
+  const [showAbrirModal, setShowAbrirModal] = useState(false);
+  const [togglingInscricoes, setTogglingInscricoes] = useState(false);
 
   const recarregarVagas = async () => {
     if (!user?.email) return;
@@ -134,9 +138,33 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
 
   const handleToggleInscricoes = async () => {
     if (!projeto || !user?.email) return;
-    const result = await toggleInscricoes(projeto.id, user.email);
+    // Abrir exige configurar o prazo primeiro (pop-up); fechar não precisa.
+    if (!projeto.inscricoes_abertas) {
+      setShowAbrirModal(true);
+      return;
+    }
+    // Atualização otimista — muda o botão na hora, sem esperar o servidor,
+    // e o próprio botão fica desabilitado com spinner até confirmar (evita
+    // parecer travado e o usuário clicar várias vezes). Reverte se falhar.
+    setTogglingInscricoes(true);
+    setProjeto({ ...projeto, inscricoes_abertas: false, status: 'ATIVO' });
+    try {
+      const result = await toggleInscricoes(projeto.id, user.email);
+      if (!result.ok) {
+        setProjeto({ ...projeto, inscricoes_abertas: true, status: 'INSCRICOES_ABERTAS' });
+        toast(result.error, 'error');
+      }
+    } finally {
+      setTogglingInscricoes(false);
+    }
+  };
+
+  const handleConfirmAbrirInscricoes = async (data: { inscricaoInicio?: string; inscricaoFim: string }) => {
+    if (!projeto || !user?.email) return;
+    const result = await abrirInscricoes(projeto.id, user.email, data);
     if (result.ok && 'data' in result && result.data) {
-      setProjeto({ ...projeto, inscricoes_abertas: result.data.inscricoes_abertas });
+      setProjeto({ ...projeto, inscricoes_abertas: result.data.inscricoes_abertas, status: 'INSCRICOES_ABERTAS' });
+      setShowAbrirModal(false);
     }
   };
 
@@ -203,13 +231,19 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
           </Link>
           <button
             onClick={handleToggleInscricoes}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+            disabled={togglingInscricoes}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-wait ${
               projeto.inscricoes_abertas
                 ? 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
                 : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
             }`}
           >
-            {projeto.inscricoes_abertas ? (
+            {togglingInscricoes ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                {projeto.inscricoes_abertas ? 'Fechando...' : 'Abrindo...'}
+              </>
+            ) : projeto.inscricoes_abertas ? (
               <>
                 <CheckCircle className="w-3.5 h-3.5" />
                 Inscrições Abertas
@@ -419,6 +453,8 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
                     <td className="px-5 py-3">
                       <button
                         onClick={() => {
+                          const perguntasExtra = parsePerguntasExtra(projeto?.formulario_extra);
+                          const respostasExtra = resolverRespostasExtra(perguntasExtra, inscricao.campos_extra);
                           const detail = JSON.stringify({
                             protocolo: inscricao.protocolo,
                             nome: inscricao.nome_completo,
@@ -429,6 +465,9 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
                             semestre: inscricao.semestre,
                             justificativa: inscricao.justificativa,
                             experiencia: inscricao.experiencia_previa,
+                            ...(respostasExtra.length > 0 ? {
+                              perguntas_do_projeto: Object.fromEntries(respostasExtra.map((r) => [r.pergunta, r.resposta])),
+                            } : {}),
                           }, null, 2);
                           alert(detail);
                         }}
@@ -461,6 +500,13 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
             ))}
           </div>
         </div>
+      )}
+
+      {showAbrirModal && (
+        <AbrirInscricoesModal
+          onClose={() => setShowAbrirModal(false)}
+          onConfirm={handleConfirmAbrirInscricoes}
+        />
       )}
     </div>
   );
