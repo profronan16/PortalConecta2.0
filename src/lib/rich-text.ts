@@ -1,4 +1,12 @@
-import DOMPurify from 'isomorphic-dompurify';
+import sanitizeHtmlLib from 'sanitize-html';
+
+// `sanitize-html` em vez de isomorphic-dompurify: aquele dependia de jsdom
+// (via html-encoding-sniffer → @exodus/bytes, um pacote ESM-only carregado
+// com require()), que quebrava no runtime serverless da Vercel com
+// `ERR_REQUIRE_ESM` — derrubando com 500 qualquer rota que passasse por
+// sanitização (inclusive /admin). A sanitização aqui só roda no servidor,
+// nunca no navegador, então não precisamos de DOM real — sanitize-html é
+// puro JS, sem essa cadeia de dependências frágil.
 
 const ALLOWED_TAGS = [
   'p', 'br', 'strong', 'em', 'u', 's', 'a',
@@ -7,11 +15,14 @@ const ALLOWED_TAGS = [
   'blockquote', 'code', 'pre', 'hr', 'span',
   'img',
 ];
-const ALLOWED_ATTR = ['href', 'target', 'rel', 'src', 'alt'];
+const ALLOWED_ATTRIBUTES: sanitizeHtmlLib.IOptions['allowedAttributes'] = {
+  a: ['href', 'target', 'rel'],
+  img: ['src', 'alt'],
+};
 
 /** Sanitiza HTML de origem confiável-mas-não-total (SUAP, editor rico) contra XSS. */
 export function sanitizeHtml(html: string): string {
-  return DOMPurify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR });
+  return sanitizeHtmlLib(html, { allowedTags: ALLOWED_TAGS, allowedAttributes: ALLOWED_ATTRIBUTES });
 }
 
 const HTML_TAG_RE = /<([a-z][a-z0-9]*)\b[^>]*>/i;
@@ -47,6 +58,6 @@ export function toSafeHtml(text: string | null | undefined): string {
 /** Remove toda formatação — para teasers com line-clamp e `<meta description>`. */
 export function stripHtml(text: string | null | undefined): string {
   if (!text) return '';
-  const semTags = DOMPurify.sanitize(text, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+  const semTags = sanitizeHtmlLib(text, { allowedTags: [], allowedAttributes: {} });
   return semTags.replace(/\s+/g, ' ').trim();
 }

@@ -4,7 +4,17 @@ import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Search, Filter, Users, ArrowRight, Sparkles, FolderOpen } from 'lucide-react';
 import { getStatusLabel } from '@/lib/utils';
-import { stripHtml } from '@/lib/rich-text';
+
+// Versão leve, sem dependência, do `stripHtml` de '@/lib/rich-text' — aquele
+// usa `sanitize-html`, uma lib pensada pra rodar no servidor, que se
+// importada aqui (componente client) infla bastante o bundle enviado ao
+// navegador. Como o resultado só vira texto puro dentro de um <p> (nunca
+// dangerouslySetInnerHTML), um strip por regex é seguro o bastante — o React
+// escapa o texto normalmente na renderização.
+function stripHtmlLite(text: string | null | undefined): string {
+  if (!text) return '';
+  return text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
 
 type Projeto = {
   id: string;
@@ -119,7 +129,7 @@ export function ProjetosExplorer({ projetos }: { projetos: Projeto[] }) {
                       <Users className="w-3.5 h-3.5" />
                       {projeto.coordenador}
                     </p>
-                    <p className="text-sm text-gray-500 leading-relaxed flex-1 line-clamp-2">{stripHtml(projeto.descricao)}</p>
+                    <p className="text-sm text-gray-500 leading-relaxed flex-1 line-clamp-2">{stripHtmlLite(projeto.descricao)}</p>
                     <div className="mt-4 flex items-center justify-between">
                       <span
                         className="inline-flex px-3 py-1 rounded-full text-xs font-semibold text-white"
