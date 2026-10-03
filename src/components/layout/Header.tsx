@@ -3,14 +3,16 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, X, Sparkles, BookOpen, FolderOpen, Calendar, ChevronRight, LayoutDashboard, LogIn, LogOut, User } from 'lucide-react';
+import { Menu, X, Sparkles, BookOpen, FolderOpen, Calendar, ChevronRight, LayoutDashboard, LogIn, LogOut, User, Search, Heart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
+import { NotificationBell } from '@/components/layout/NotificationBell';
 
 const navItems = [
   { href: '/editais', label: 'Editais', icon: BookOpen, description: 'Oportunidades traduzidas pela IFizinha' },
   { href: '/projetos', label: 'Projetos', icon: FolderOpen, description: '25+ projetos de extensão ativos' },
   { href: '/agenda', label: 'Agenda', icon: Calendar, description: 'Prazos e eventos do campus' },
+  { href: '/busca', label: 'Buscar', icon: Search, description: 'Busca global em projetos, editais e posts' },
 ];
 
 export function Header() {
@@ -120,6 +122,20 @@ export function Header() {
             {!loading && (
               user ? (
                 <div className="flex items-center gap-1">
+                  <NotificationBell tom={isScrolled || !isHome ? 'claro' : 'escuro'} />
+                  <Link
+                    href="/minha-area"
+                    title="Minha área: favoritos, notificações e alertas"
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-all',
+                      isScrolled || !isHome
+                        ? 'text-gray-600 hover:text-azul-eletrico hover:bg-gray-100'
+                        : 'text-white/80 hover:text-white hover:bg-white/10'
+                    )}
+                  >
+                    <Heart className="w-4 h-4" />
+                    <span className="hidden md:inline">Minha área</span>
+                  </Link>
                   <Link
                     href="/meus-dados"
                     title="Meus Dados"
@@ -234,6 +250,15 @@ export function Header() {
               <div className="pt-2 mt-2 border-t border-gray-100 space-y-1">
                 {user ? (
                   <>
+                    <Link
+                      href="/minha-area"
+                      className="flex items-center gap-3 p-4 rounded-xl text-gray-700 hover:bg-gray-50 transition-all"
+                    >
+                      <div className="w-9 h-9 rounded-lg bg-gray-100 text-gray-500 flex items-center justify-center">
+                        <Heart className="w-5 h-5" />
+                      </div>
+                      <p className="font-semibold text-sm">Minha área</p>
+                    </Link>
                     <Link
                       href="/meus-dados"
                       className="flex items-center gap-3 p-4 rounded-xl text-gray-700 hover:bg-gray-50 transition-all"

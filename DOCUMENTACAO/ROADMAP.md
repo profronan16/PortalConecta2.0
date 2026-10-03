@@ -133,20 +133,20 @@
 
 ---
 
-## 📋 FASE 6 — Portal Completo 🔶 (~25%)
+## 📋 FASE 6 — Portal Completo 🔶 (~75%)
 
 **Objetivo:** Notificações → favoritos → alertas → relatórios avançados
 
 ### ✅ Concluído:
 
 - [x] **6.1** Tabelas `AlertaInteresse`, `Favorito`, `Notificacao` (models no Prisma)
+- [x] **6.2** Notificações: leitura/marcação em `src/actions/notificacoes.ts`, produtor em `src/lib/notificacoes.ts`, sino no cabeçalho (`NotificationBell`) e lista em `/minha-area`. Já é alimentado pela mudança de status de inscrição.
+- [x] **6.3** Favoritos: `src/actions/favoritos.ts` + botão `BotaoFavorito` nas páginas de projeto e edital + lista em `/minha-area`
+- [x] **6.4** Alertas de interesse: `src/actions/alertas.ts` (um alerta por canal, ativo/inativo, categorias) + disparo em `src/lib/alertas.ts` quando um edital é publicado (notificação no portal e e-mail), idempotente por edital/usuário
 - [x] **6.5** "Meus dados" para estudantes
 
 ### ❌ Pendente:
 
-- [ ] **6.2** UI + API de notificações
-- [ ] **6.3** UI + API de favoritos
-- [ ] **6.4** UI + API de alertas de interesse
 - [ ] **6.6** Busca global (projetos + editais + posts)
 - [ ] **6.7** Relatórios avançados com gráficos (nenhuma lib de gráficos instalada hoje)
 
@@ -163,7 +163,7 @@
 | **3** | 100% | ✅ Upload + extração + revisão + publicação |
 | **4** | 100% | ✅ RAG com pgvector, chat com citações |
 | **5** | 80% | 🔶 Sync manual funcionando; cron e conflitos fora de escopo |
-| **6** | 25% | 🔶 Modelos prontos; faltam todas as UIs |
+| **6** | 75% | 🔶 Favoritos/notificações/alertas entregues; faltam busca global e gráficos |
 
 ---
 
@@ -177,9 +177,9 @@
 5. **2.10** Bloqueio de campos SUAP na edição pelo professor ✅
 
 ### Médio prazo — features da Fase 6
-6. **6.3** Favoritos (UI + API)
-7. **6.2** Notificações (UI + API)
-8. **6.4** Alertas de interesse (UI + API)
+6. **6.3** Favoritos (UI + API) ✅
+7. **6.2** Notificações (UI + API) ✅
+8. **6.4** Alertas de interesse (UI + API) ✅
 9. **6.7** Relatórios avançados com gráficos
 10. **6.6** Busca global
 11. **4.8** Testes do pipeline RAG (após 1.16)

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { formatDate, getDaysUntil, getStatusLabel, getStatusColor, getCategoryColor } from '@/lib/utils';
 import { prisma } from '@/lib/prisma';
+import { BotaoFavorito } from '@/components/ui/BotaoFavorito';
 import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
@@ -309,6 +310,7 @@ export default async function EditalDetalhePage({ params }: { params: { slug: st
               Link Oficial
             </a>
           )}
+          <BotaoFavorito entidade="edital" entidadeId={edital.id} />
           <Link
             href="/editais"
             className="inline-flex items-center gap-2 border border-gray-200 text-gray-700 font-semibold px-6 py-3 rounded-xl hover:bg-gray-50 transition-all"

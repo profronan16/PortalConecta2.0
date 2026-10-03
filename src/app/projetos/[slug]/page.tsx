@@ -8,6 +8,7 @@ import {
 import { getStatusLabel, getStatusColor } from '@/lib/utils';
 import { stripHtml } from '@/lib/rich-text';
 import { SafeHtml } from '@/components/ui/SafeHtml';
+import { BotaoFavorito } from '@/components/ui/BotaoFavorito';
 import { prisma } from '@/lib/prisma';
 import type { Metadata } from 'next';
 
@@ -359,6 +360,11 @@ export default async function ProjetoPage({ params }: { params: Params }) {
                   </Link>
                 </>
               )}
+            </div>
+
+            {/* Favoritar (ROADMAP 6.3) — sobre o gradiente, variante escura */}
+            <div className="mt-3">
+              <BotaoFavorito entidade="projeto" entidadeId={projeto.id} variante="escuro" />
             </div>
           </div>
         </div>

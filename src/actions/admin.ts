@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { slugify, translatePrismaError } from '@/lib/utils';
 import { cache } from '@/lib/cache';
 import { getPublicMetrics } from '@/lib/metrics';
+import { dispararAlertasDeEdital } from '@/lib/alertas';
 import { derivarEventosEdital, derivarEventosProjeto } from '@/lib/evento-helpers';
 import { LIMPEZA_TABLES } from '@/lib/limpeza-tables';
 import { sincronizarProjetoSintetico, removerProjetoSintetico } from '@/lib/projeto-sintetico';
@@ -212,6 +213,13 @@ export async function toggleEditalPublicacao(id: string, callerEmail: string): P
     const review_status = edital.review_status === 'PUBLICADO' ? 'RASCUNHO' : 'PUBLICADO';
     await prisma.edital.update({ where: { id }, data: { review_status } });
     cache.invalidate('chat:');
+
+    // ROADMAP 6.4: ao PUBLICAR, avisa quem assinou alerta de interesse para a
+    // categoria. Fire-and-forget: uma falha de aviso não pode desfazer a
+    // publicação (o disparo é idempotente por link + usuário).
+    if (review_status === 'PUBLICADO') {
+      dispararAlertasDeEdital(id).catch(console.error);
+    }
 
     return { ok: true, data: { review_status } };
   } catch (e) {

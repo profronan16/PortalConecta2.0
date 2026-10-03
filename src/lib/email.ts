@@ -251,3 +251,65 @@ export async function enviarBoasVindas(email: string, nome: string) {
     return { ok: false, error: String(error) };
   }
 }
+
+interface AlertaEditalEmailData {
+  email: string;
+  nome?: string | null;
+  editalTitulo: string;
+  editalCategoria: string;
+  editalSlug: string;
+  dataEncerramento?: Date | null;
+}
+
+/**
+ * Aviso de edital novo para quem assinou alerta de interesse (ROADMAP 6.4).
+ * Segue o mesmo contrato dos outros envios: nunca lança, devolve { ok }.
+ */
+export async function enviarAlertaEdital(data: AlertaEditalEmailData) {
+  const { email, nome, editalTitulo, editalCategoria, editalSlug, dataEncerramento } = data;
+
+  const prazo = dataEncerramento
+    ? `<p style="color: #6b7280; font-size: 14px; margin: 0 0 8px 0;">
+         <strong>Inscrições até:</strong> ${dataEncerramento.toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+       </p>`
+    : '';
+
+  const content = `
+    <h2 style="color: #1f2937; font-size: 20px; font-weight: 700; margin: 0 0 8px 0;">Novo edital de ${editalCategoria}</h2>
+    <p style="color: #6b7280; font-size: 14px; margin: 0 0 20px 0;">
+      Olá${nome ? `, ${nome}` : ''}! Um edital da categoria que você escolheu acompanhar foi publicado.
+    </p>
+
+    <div style="background-color: #f1f5f9; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+      <h3 style="color: #1f2937; font-size: 16px; font-weight: 700; margin: 0 0 12px 0;">${editalTitulo}</h3>
+      <p style="color: #6b7280; font-size: 14px; margin: 0 0 8px 0;">
+        <strong>Categoria:</strong> ${editalCategoria}
+      </p>
+      ${prazo}
+    </div>
+
+    <div style="text-align: center;">
+      <a href="https://portal-conecta2-0.vercel.app/editais/${editalSlug}" style="display: inline-block; background-color: #2F52D3; color: #ffffff; font-weight: 600; font-size: 14px; padding: 12px 24px; border-radius: 8px; text-decoration: none;">
+        Ver o edital
+      </a>
+    </div>
+
+    <p style="color: #9ca3af; font-size: 12px; margin: 24px 0 0 0; text-align: center;">
+      Você recebe este e-mail porque ativou alertas por e-mail no Portal Conecta.
+      Ajuste ou desative quando quiser em "Minha área".
+    </p>
+  `;
+
+  try {
+    await resend.emails.send({
+      from: 'Portal Conecta IFPR <noreply@portal-conecta2-0.vercel.app>',
+      to: email,
+      subject: `Novo edital: ${editalTitulo}`,
+      html: wrapEmail(content),
+    });
+    return { ok: true };
+  } catch (error) {
+    console.error('Erro ao enviar alerta de edital:', error);
+    return { ok: false, error: String(error) };
+  }
+}

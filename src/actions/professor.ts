@@ -9,6 +9,7 @@ import { sanitizeHtml } from '@/lib/rich-text';
 import type { PerguntaExtra } from '@/lib/formulario-extra';
 import { isAdministradorGeral, projetosAcessiveis, temAcessoAoProjeto, whereUsuarioTemAcessoAoProjeto } from '@/lib/permissions';
 import { camposBloqueadosParaEdicao, filtrarEdicaoProjeto } from '@/lib/projetos-edicao';
+import { notificarMudancaStatusInscricao } from '@/lib/notificacoes';
 import type { Prisma } from '@prisma/client';
 
 type ActionResult<T = void> = { ok: true; data?: T } | { ok: false; error: string };
@@ -236,7 +237,7 @@ export async function updateInscricaoStatus(
     // Buscar inscrição atual antes de atualizar
     const inscricaoAtual = await prisma.inscricao.findUnique({
       where: { id: inscricaoId },
-      include: { projeto: { select: { id: true, nome: true } } },
+      include: { projeto: { select: { id: true, nome: true, slug: true } } },
     });
 
     if (!inscricaoAtual) {
@@ -288,6 +289,16 @@ export async function updateInscricaoStatus(
         observacao,
       }).catch(console.error);
     }
+
+    // ROADMAP 6.2: espelha o aviso no portal (sino de notificações) para quem
+    // se inscreveu logado. Não bloqueia a resposta nem falha a action.
+    notificarMudancaStatusInscricao({
+      userId: inscricaoAtual.user_id,
+      protocolo: inscricaoAtual.protocolo,
+      projetoNome: inscricaoAtual.projeto.nome,
+      projetoSlug: inscricaoAtual.projeto.slug,
+      novoStatus: status,
+    }).catch(console.error);
 
     return { ok: true };
   } catch (e) {
