@@ -45,8 +45,20 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 4. Leitura concedida ao role da aplicação.
-GRANT SELECT ON public_metrics TO authenticated, anon, service_role;
-GRANT EXECUTE ON FUNCTION refresh_public_metrics() TO authenticated, anon, service_role;
+--    Os nomes `authenticated`/`anon`/`service_role` são do Supabase e NÃO existem
+--    num PostgreSQL próprio (VPS/local) — por isso o grant é condicional. Assim o
+--    mesmo arquivo serve para os dois ambientes.
+DO $$
+DECLARE
+  papel text;
+BEGIN
+  FOREACH papel IN ARRAY ARRAY['authenticated', 'anon', 'service_role'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = papel) THEN
+      EXECUTE format('GRANT SELECT ON public_metrics TO %I', papel);
+      EXECUTE format('GRANT EXECUTE ON FUNCTION refresh_public_metrics() TO %I', papel);
+    END IF;
+  END LOOP;
+END $$;
 
 -- 5. Refresh inicial.
 SELECT refresh_public_metrics();

@@ -135,7 +135,10 @@ export function HeroIFizinha({ config = {} }: HeroIFizinhaProps) {
                   <div className="bg-white/20 rounded-2xl rounded-tl-sm p-4 border border-white/10">
                     <p className="text-white text-sm leading-relaxed">
                       Ei, estudante! Tem{' '}
-                      <strong className="text-dourado-400">4 editais abertos</strong>{' '}
+                      {/* Antes era "4 editais abertos" fixo no código, enquanto os cards
+                          logo abaixo (e o admin) mostravam o número real — o SPEC §5.1
+                          proíbe essa divergência. Agora usa o mesmo valor configurável. */}
+                      <strong className="text-dourado-400">{config.stat_editais || '4'} editais abertos</strong>{' '}
                       essa semana — e um deles encerra em breve. Quer que eu explique? 👀
                     </p>
                   </div>

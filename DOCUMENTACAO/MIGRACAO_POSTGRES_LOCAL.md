@@ -1,7 +1,7 @@
 # Migração para PostgreSQL local / próprio
 
-**Data:** 2026-09-16
-**Situação:** em execução (passos 1–2 concluídos, 3–6 dependem de privilégio de administrador na máquina local)
+**Data:** 2026-09-16 (migração concluída e validada)
+**Situação:** ✅ concluída — o desenvolvimento local roda contra um PostgreSQL 18 próprio, com os dados reais de produção restaurados.
 
 ---
 
@@ -18,78 +18,102 @@ usava SQL direto via Prisma (`prisma.$queryRawUnsafe` com o operador `<=>` em
 importado por ninguém** — é código morto. Ou seja: a migração era só trocar a
 conexão de banco.
 
-## Arquitetura depois da migração
+## Arquitetura
 
 | Ambiente | Onde roda | Banco |
 |---|---|---|
-| **Produção** — https://portal.ifcoding.com.br | VPS AlmaLinux 9.8 (IP e acesso SSH **fora deste repositório**), serviço systemd `portal-conecta.service`, código em `/var/www/portal-conecta`, porta 3000 atrás do nginx | PostgreSQL **16** local no próprio VPS, banco `portal_conecta` (dono `portal`), pgvector 0.8.6 |
-| **Local (dev)** | Windows, `npm run dev` | PostgreSQL **18** local, banco `portal_conecta` (dono `portal_conecta`), pgvector 0.8.6 |
+| **Produção** — https://portal.ifcoding.com.br | VPS AlmaLinux 9.8 (IP e acesso SSH **fora deste repositório**), serviço systemd `portal-conecta.service`, código em `/var/www/portal-conecta`, porta 3000 atrás do nginx | PostgreSQL **16** no próprio VPS, banco `portal_conecta` (dono `portal`), pgvector 0.8.6 |
+| **Local (dev)** | Windows — cluster em espaço de usuário, **porta 5433** | PostgreSQL **18.6**, banco `portal_conecta` (dono `portal_conecta`), pgvector 0.8.6 |
 
 `prisma/schema.prisma` continua com `provider = "postgresql"`, `url = env("DATABASE_URL")`
-e `directUrl = env("DIRECT_URL")`. No local os dois apontam para o mesmo banco
-(sem pooler, que só era necessário no Supabase).
+e `directUrl = env("DIRECT_URL")` — no local os dois apontam para o mesmo banco.
 
-## Passos
+## Como o banco local está montado
 
-### 1. pgvector no PostgreSQL 18 local ✅ (arquivos preparados)
+Como o `pg_hba.conf` do serviço PostgreSQL 18 já instalado na máquina exige
+`scram-sha-256` (e escrever em `C:\Program Files` exigiria administrador), o
+projeto ganhou um **cluster próprio, em espaço de usuário** — sem tocar no
+serviço existente:
 
-O schema exige a extensão (modelo `chunks_kb` tem `embedding Unsupported("vector(1536)")`),
-então `prisma db push` falha sem ela. Não há pacote no winget/choco; o binário veio do
-build da comunidade para PG 18 (`vector.v0.8.6-pg18.zip`, release `0.8.6_18`, de
-<https://github.com/andreiramani/pgvector_pgsql_windows/releases> — o pgvector oficial
-não publica binários Windows). Conferido: `vector.control` com
-`default_version = '0.8.6'` e os scripts de atualização no leiaute padrão.
+- **Binários:** cópia de `C:\Program Files\PostgreSQL\18` em `%USERPROFILE%\pgsql18-portal`
+  (com `vector.dll` e os arquivos de extensão do pgvector 0.8.6 adicionados).
+- **Cluster:** `%USERPROFILE%\pgsql18-portal\data`, criado com `initdb`
+  (`--auth=scram-sha-256`, locale `C`, encoding UTF8), escutando só em `127.0.0.1:5433`.
+- **Início/parada:** tarefas agendadas do usuário (não exigem administrador):
+  - `PortalConecta-Postgres-Start` — sobe o cluster; tem gatilho **no logon**, então
+    o banco já está no ar quando você abre a sessão.
+  - `PortalConecta-Postgres-Stop` — parada limpa (`-m fast`).
+  - Scripts equivalentes: `%USERPROFILE%\pgsql18-portal\start-postgres.cmd` e `stop-postgres.cmd`.
+- **Log do servidor:** `%USERPROFILE%\pgsql18-portal\data\postgres.log`.
+- **Senhas:** a do usuário da aplicação (`portal_conecta`) está no `.env` (ignorado
+  pelo Git); a do superusuário `postgres` do cluster ficou em `%TEMP%\portal-pg-superuser.txt`.
 
-### 2. Dump de produção ✅
+> Alternativa não usada: instalar o pgvector no serviço que já existe
+> (`portal-setup-postgres.cmd`, em `C:\Users\Public\` e no Desktop). Ficou pronto
+> caso você prefira concentrar tudo na porta 5432 — nesse caso seria preciso rodar
+> como administrador e informar a senha do usuário `postgres` do serviço.
 
-Gerado no VPS com `pg_dump -Fc` (formato custom, comprimido) e baixado para
-`C:\Users\Ronan\Documents\backups\portal_conecta-prod-<data>.dump`.
-Tamanho ~90 KB; conteúdo conferido com `pg_restore -l`: 36 tabelas com dados,
-extensão `vector` e função `match_chunks_kb`. Origem: PostgreSQL 16.15
-(restaurar 16 → 18 é a direção suportada).
+## ⚠️ Nunca rode `prisma db push` neste banco
 
-### 3. Usuário e banco no PostgreSQL local ⏳ requer administrador
+O banco restaurado de produção tem **duas coisas que o `schema.prisma` não declara**:
 
-O `pg_hba.conf` local exige `scram-sha-256`, então tudo isso precisa de
-privilégio: o script `portal-setup-postgres.cmd` (em `C:\Users\Ronan\Desktop\` e em
-`C:\Users\Public\`) faz, de forma idempotente:
+1. `Edital.projetoId` (+ FK e índice) — **com dados** (os 2 editais têm valor).
+2. `chunks_kb_embedding_hnsw_idx` — índice vetorial criado por `prisma/pgvector-setup.sql`
+   (o Prisma não consegue modelar índice HNSW sobre `Unsupported("vector(1536)")`).
 
-1. para o serviço `postgresql-x64-18`;
-2. copia `vector.dll` e os arquivos de extensão para `C:\Program Files\PostgreSQL\18`;
-3. sobe o serviço;
-4. cria o usuário `portal_conecta` (senha em `.env`) e o banco `portal_conecta`;
-5. roda `CREATE EXTENSION vector` e passa a posse do schema `public` para o usuário.
-
-### 4. Restaurar os dados ⏳
-
-```powershell
-$pg = "C:\Program Files\PostgreSQL\18\bin"
-# schema + dados (--no-owner: o dono em produção é o role `portal`)
-& "$pg\pg_restore.exe" --no-owner --no-acl --clean --if-exists `
-  -U portal_conecta -h localhost -p 5432 -d portal_conecta `
-  "$env:USERPROFILE\Documents\backups\portal_conecta-prod-<data>.dump"
-```
-
-### 5. Sincronizar schema e funções auxiliares ⏳
+`prisma db push` sincroniza o banco **para** o schema, ou seja: ele **apagaria os
+dois**. O banco é a fonte de verdade do modelo; o `schema.prisma` existe para gerar
+o client tipado. Se precisar conferir divergência, use só leitura:
 
 ```powershell
-npx prisma db push                     # garante que o schema bate com schema.prisma
-# psql local: aplica a função de busca vetorial e a view de métricas
-& "$pg\psql.exe" -U portal_conecta -h localhost -d portal_conecta -f prisma/pgvector-setup.sql
-& "$pg\psql.exe" -U portal_conecta -h localhost -d portal_conecta -f prisma/public-metrics-setup.sql
+npx prisma migrate diff --from-schema-datasource prisma/schema.prisma `
+  --to-schema-datamodel prisma/schema.prisma --script
 ```
 
-### 6. Validar ⏳
+## O que foi feito
+
+1. **`.env`** apontado para `postgresql://portal_conecta:***@127.0.0.1:5433/portal_conecta?schema=public`
+   (as 4 variáveis `SUPABASE_*` ficaram comentadas; app não as usa).
+2. **pgvector 0.8.6** instalado no cluster local. O binário veio do build da
+   comunidade para PG 18 (`vector.v0.8.6-pg18.zip`, release `0.8.6_18`, de
+   <https://github.com/andreiramani/pgvector_pgsql_windows/releases> — o pgvector
+   oficial não publica binários Windows). Conferido: `vector.control` com
+   `default_version = '0.8.6'` e os scripts de atualização no leiaute padrão.
+3. **Dump de produção** gerado no VPS com `pg_dump -Fc` e baixado para
+   `C:\Users\Ronan\Documents\backups\portal_conecta-prod-<data>.dump`
+   (90 KB; 36 tabelas; extensão `vector` e função `match_chunks_kb` inclusas).
+4. **Restore** com `pg_restore --no-owner --no-acl`, **excluindo** as entradas da
+   extensão (já criada) e do comentário dela (o comentário falha porque a extensão
+   pertence ao superusuário — erro cosmético, sem efeito).
+5. **`prisma/pgvector-setup.sql`** e **`prisma/public-metrics-setup.sql`** aplicados.
+   O segundo foi ajustado para ser portátil: os `GRANT` para
+   `authenticated`/`anon`/`service_role` (papéis do Supabase) agora são condicionais,
+   porque esses papéis não existem num PostgreSQL próprio.
+6. **Validação:** 232 testes, `tsc --noEmit` limpo, `next build` OK e o app servindo
+   com dados reais (home completa, `/projetos` com os 3 projetos, `/editais`,
+   `/busca` e `/minha-area` respondendo 200).
+
+Contagens conferidas local × produção: `User` 11, `Inscricao` 8, `Job` 8, `Evento` 8,
+`vagas` 6, `Projeto` 3, `Edital` 2, 36 tabelas.
+
+## Operação no dia a dia
 
 ```powershell
-npm test          # 232 testes
-npx tsc --noEmit
-npm run dev       # a home deve carregar com os dados reais
+# o cluster sobe sozinho no logon; para subir/parar na mão:
+Start-ScheduledTask -TaskName "PortalConecta-Postgres-Start"
+Start-ScheduledTask -TaskName "PortalConecta-Postgres-Stop"
+
+# aplicação
+npm run dev
 ```
 
----
+Conferir se o banco está no ar:
 
-## Como atualizar os dados locais a partir de produção
+```powershell
+& "$env:USERPROFILE\pgsql18-portal\bin\pg_isready.exe" -h 127.0.0.1 -p 5433
+```
+
+## Atualizar os dados locais a partir de produção
 
 ```bash
 # no VPS
@@ -99,25 +123,13 @@ sudo -u postgres pg_dump -Fc -d portal_conecta -f /tmp/portal_conecta.dump
 ```powershell
 # na máquina local (host e chave conforme o seu acesso ao VPS — não versionar)
 scp root@<ip-do-vps>:/tmp/portal_conecta.dump $env:TEMP\
+# e então repita o passo 4 (com --clean se quiser substituir o conteúdo local)
 ```
 
-Depois repita o passo 4. **Atenção:** o restore com `--clean` apaga o conteúdo
-local do banco antes de recarregar — não use se houver dados locais a preservar.
+## Limpezas decorrentes (pendentes de decisão)
 
----
-
-## Pendências e limpezas decorrentes
-
-- **Cron `keep-db-alive` não faz mais sentido**: `src/app/api/cron/keep-db-alive` e o
-  bloco `crons` do `vercel.json` existiam só para o Supabase não pausar por
-  inatividade (plano free). Produção é um VPS com Postgres próprio e o deploy não é
-  Vercel — a rota pode ser removida (fica a decisão de quando).
-- **`src/lib/supabase.ts` é código morto** (nenhum import) e pode ser apagado junto
-  com as variáveis `SUPABASE_*` do ambiente de produção.
-- **`DIRECT_URL` no local** aponta para o mesmo banco do `DATABASE_URL`; só era
-  diferente por causa do pooler do Supabase.
-- **Backup do `.env` anterior** (com as credenciais do Supabase apagado):
-  `%TEMP%\portal-env-backup-20261003-114254.txt` — pode descartar, o projeto
-  Supabase não existe mais.
-- **Segredos locais**: a senha do usuário `portal_conecta` fica apenas no `.env`
-  (ignorado pelo Git) e no script `.cmd` que deve ser apagado após o uso.
+- **Cron `keep-db-alive`**: `src/app/api/cron/keep-db-alive` e o bloco `crons` do
+  `vercel.json` existiam só para o Supabase não pausar por inatividade. Produção é
+  um VPS (não Vercel) e o banco é local — a rota perdeu função.
+- **`src/lib/supabase.ts`**: código morto (nenhum import); pode ser apagado junto com
+  as variáveis `SUPABASE_*` do ambiente de produção.

@@ -58,6 +58,11 @@ beforeEach(() => {
   // Por padrão, dentro do limite de rate limit.
   prismaMock.rateLimitHit.count.mockResolvedValue(0);
   prismaMock.rateLimitHit.create.mockResolvedValue({});
+  // O rate limiter faz uma limpeza oportunista (`Math.random() < 0.02`) que
+  // encadeia `.catch()` na promessa — sem um valor resolvido aqui, ~2% das
+  // chamadas quebravam com "Cannot read properties of undefined (reading 'catch')"
+  // e o teste falhava de forma intermitente.
+  prismaMock.rateLimitHit.deleteMany.mockResolvedValue({ count: 0 });
 });
 
 describe('consentimento e ciência das regras (§14)', () => {
