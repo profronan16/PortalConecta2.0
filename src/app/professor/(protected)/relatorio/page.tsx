@@ -8,11 +8,19 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { listMyProjetos, listInscricoes, exportInscricoesCSV } from '@/actions/professor';
+import { getProfessorRelatorioSeries } from '@/lib/relatorios';
+import {
+  GraficoBarras, GraficoBarrasHorizontais, GraficoRosca, PainelInscricoesProjeto,
+} from '@/components/charts';
 import { formatDateShort, getStatusLabel } from '@/lib/utils';
 import { Prisma } from '@prisma/client';
 
 type Projeto = Awaited<ReturnType<typeof listMyProjetos>>[number];
 type Inscricao = Prisma.InscricaoGetPayload<{}>;
+
+/** Série agregada dos projetos do professor (ROADMAP 6.7). */
+type ProfessorSeriesResult = Awaited<ReturnType<typeof getProfessorRelatorioSeries>>;
+type ProfessorSeries = Extract<ProfessorSeriesResult, { ok: true }>['data'];
 
 const STATUS_COLORS: Record<string, string> = {
   recebida: 'bg-gray-100 text-gray-700',
@@ -33,6 +41,32 @@ export default function ProfessorRelatorioPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('todos');
   const [selectedInscricao, setSelectedInscricao] = useState<Inscricao | null>(null);
+  // Agregados dos projetos do professor (gráficos do item 6.7). O escopo é
+  // sempre restrito pelo e-mail na Server Action — a tela só escolhe entre
+  // "todos os meus projetos" e o projeto selecionado no topo.
+  const [escopoGraficos, setEscopoGraficos] = useState<'todos' | 'projeto'>('todos');
+  const [series, setSeries] = useState<ProfessorSeries | null>(null);
+  const [seriesError, setSeriesError] = useState<string | null>(null);
+  const [loadingSeries, setLoadingSeries] = useState(true);
+
+  const projetoDoEscopo = escopoGraficos === 'projeto' ? selectedProjeto || undefined : undefined;
+
+  useEffect(() => {
+    if (!user?.email) return;
+    setLoadingSeries(true);
+    getProfessorRelatorioSeries(user.email, projetoDoEscopo)
+      .then((result) => {
+        if (result.ok) {
+          setSeries(result.data);
+          setSeriesError(null);
+        } else {
+          setSeries(null);
+          setSeriesError(result.error);
+        }
+      })
+      .catch(() => setSeriesError('Não foi possível carregar os gráficos dos seus projetos.'))
+      .finally(() => setLoadingSeries(false));
+  }, [user, projetoDoEscopo]);
 
   useEffect(() => {
     if (!user?.email) return;
@@ -89,6 +123,18 @@ export default function ProfessorRelatorioPage() {
     naoSelecionados: inscricoes.filter((i) => i.status === 'nao_selecionado').length,
   };
 
+  // Gráfico de vagas preenchidas (ROADMAP 6.7). A escala usa a MAIOR oferta de
+  // vagas como denominador para que "4 de 4" apareça cheio e "1 de 10" apareça
+  // curto, mesmo com números absolutos bem diferentes entre projetos.
+  const vagasDoEscopo = series?.vagasPorProjeto ?? [];
+  const dadosVagas = vagasDoEscopo.map((vaga) => ({
+    rotulo: vaga.rotulo,
+    valor: vaga.preenchidas,
+    percentual: vaga.percentual,
+  }));
+  const maiorOfertaDeVagas = Math.max(1, ...vagasDoEscopo.map((vaga) => vaga.total));
+  const vagasPorRotulo = new Map(vagasDoEscopo.map((vaga) => [vaga.rotulo, vaga]));
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -137,6 +183,11 @@ export default function ProfessorRelatorioPage() {
           </div>
         ))}
       </div>
+
+      {/* Gráficos do projeto selecionado (ROADMAP 6.7) — mesma fonte dos cartões acima */}
+      {!loadingInscricoes && inscricoes.length > 0 && (
+        <PainelInscricoesProjeto inscricoes={inscricoes} />
+      )}
 
       {/* Filtros e Export */}
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
@@ -297,6 +348,99 @@ export default function ProfessorRelatorioPage() {
           </div>
         </>
       )}
+
+      {/* ── Relatórios avançados com gráficos (ROADMAP 6.7) ──────────────────
+          Sempre restritos aos projetos deste professor: o filtro de acesso é
+          aplicado no servidor por `getProfessorRelatorioSeries`. */}
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black text-gray-900">Gráficos dos meus projetos</h2>
+            <p className="text-gray-500 text-sm">
+              Inscrições e vagas{' '}
+              {escopoGraficos === 'projeto' ? 'do projeto selecionado' : 'de todos os seus projetos'}
+            </p>
+          </div>
+          <div className="flex gap-1.5 flex-wrap">
+            {([
+              { valor: 'todos', rotulo: 'Todos os meus projetos' },
+              { valor: 'projeto', rotulo: 'Projeto selecionado' },
+            ] as const).map((opcao) => (
+              <button
+                key={opcao.valor}
+                type="button"
+                onClick={() => setEscopoGraficos(opcao.valor)}
+                disabled={opcao.valor === 'projeto' && !selectedProjeto}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-all disabled:opacity-40 ${
+                  escopoGraficos === opcao.valor
+                    ? 'bg-azul-eletrico text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {opcao.rotulo}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {loadingSeries ? (
+          <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
+            Carregando gráficos...
+          </div>
+        ) : seriesError || !series ? (
+          <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-sm text-gray-500">
+            {seriesError ?? 'Não foi possível carregar os gráficos dos seus projetos.'}
+          </div>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <h3 className="font-bold text-gray-900">Inscrições por status</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                {series.totalInscricoes} inscrição(ões) em {series.totalProjetos} projeto(s)
+              </p>
+              <GraficoRosca
+                dados={series.inscricoesPorStatus}
+                titulo="Inscrições por status nos seus projetos"
+                unidade="inscrições"
+                rotuloCentro="inscrições"
+                textoVazio="Nenhuma inscrição nos seus projetos."
+              />
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <h3 className="font-bold text-gray-900">Inscrições por mês</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                Últimos 12 meses (meses sem inscrição aparecem zerados)
+              </p>
+              <GraficoBarras
+                dados={series.inscricoesPorMes}
+                titulo="Inscrições por mês nos seus projetos (últimos 12 meses)"
+                unidade="inscrições"
+                textoVazio="Nenhuma inscrição nos seus projetos."
+              />
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 lg:col-span-2">
+              <h3 className="font-bold text-gray-900">Vagas preenchidas por projeto</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                Selecionados sobre o total de vagas ofertadas — {' '}
+                {series.totalSelecionados} de {series.totalVagas} vaga(s)
+              </p>
+              <GraficoBarrasHorizontais
+                dados={dadosVagas}
+                titulo="Vagas preenchidas por projeto"
+                unidade="selecionados"
+                maximo={maiorOfertaDeVagas}
+                formatarValor={(dado) => {
+                  const vaga = vagasPorRotulo.get(dado.rotulo);
+                  return vaga ? `${vaga.preenchidas}/${vaga.total}` : `${dado.valor}`;
+                }}
+                textoVazio="Nenhum projeto seu tem vagas ofertadas."
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

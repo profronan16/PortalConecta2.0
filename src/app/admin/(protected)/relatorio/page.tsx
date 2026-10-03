@@ -6,11 +6,19 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { listMyProjetos, listInscricoes, exportInscricoesCSV } from '@/actions/professor';
+import { getAdminRelatorioSeries } from '@/lib/relatorios';
+import {
+  GraficoBarras, GraficoBarrasHorizontais, GraficoRosca, PainelInscricoesProjeto,
+} from '@/components/charts';
 import { formatDateShort } from '@/lib/utils';
 import { Prisma } from '@prisma/client';
 
 type Projeto = Awaited<ReturnType<typeof listMyProjetos>>[number];
 type Inscricao = Prisma.InscricaoGetPayload<{}>;
+
+/** Série agregada do portal (ROADMAP 6.7) devolvida pela Server Action `getAdminRelatorioSeries`. */
+type AdminSeriesResult = Awaited<ReturnType<typeof getAdminRelatorioSeries>>;
+type AdminSeries = Extract<AdminSeriesResult, { ok: true }>['data'];
 
 const STATUS_COLORS: Record<string, string> = {
   recebida: 'bg-gray-100 text-gray-700',
@@ -30,6 +38,28 @@ export default function AdminRelatorioPage() {
   const [loadingInscricoes, setLoadingInscricoes] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('todos');
+  // Agregados do portal inteiro (gráficos do item 6.7) — carregados à parte das
+  // inscrições do projeto selecionado, que continuam vindo de `listInscricoes`.
+  const [series, setSeries] = useState<AdminSeries | null>(null);
+  const [seriesError, setSeriesError] = useState<string | null>(null);
+  const [loadingSeries, setLoadingSeries] = useState(true);
+
+  useEffect(() => {
+    if (!user?.email) return;
+    setLoadingSeries(true);
+    getAdminRelatorioSeries(user.email)
+      .then((result) => {
+        if (result.ok) {
+          setSeries(result.data);
+          setSeriesError(null);
+        } else {
+          setSeries(null);
+          setSeriesError(result.error);
+        }
+      })
+      .catch(() => setSeriesError('Não foi possível carregar os gráficos do portal.'))
+      .finally(() => setLoadingSeries(false));
+  }, [user]);
 
   useEffect(() => {
     if (!user?.email) return;
@@ -135,6 +165,11 @@ export default function AdminRelatorioPage() {
         ))}
       </div>
 
+      {/* Gráficos do projeto selecionado (ROADMAP 6.7) — mesma fonte dos cartões acima */}
+      {!loadingInscricoes && inscricoes.length > 0 && (
+        <PainelInscricoesProjeto inscricoes={inscricoes} />
+      )}
+
       {/* Filtros e Export */}
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-50 flex flex-wrap items-center justify-between gap-3">
@@ -221,6 +256,85 @@ export default function AdminRelatorioPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Relatórios avançados com gráficos (ROADMAP 6.7) ──────────────────
+          Visão geral do portal: inscrições por status/mês, projetos publicados
+          por área e editais publicados por categoria. Tudo agregado no banco
+          por `src/lib/relatorios.ts`. */}
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-lg font-black text-gray-900">Visão geral do portal</h2>
+          <p className="text-gray-500 text-sm">
+            Dados agregados de todo o portal (inscrições, projetos e editais publicados)
+          </p>
+        </div>
+
+        {loadingSeries ? (
+          <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-gray-400 text-sm">
+            Carregando gráficos...
+          </div>
+        ) : seriesError || !series ? (
+          <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-sm text-gray-500">
+            {seriesError ?? 'Não foi possível carregar os gráficos do portal.'}
+          </div>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <h3 className="font-bold text-gray-900">Inscrições por status</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                {series.totalInscricoes} inscrição(ões) em todos os projetos
+              </p>
+              <GraficoRosca
+                dados={series.inscricoesPorStatus}
+                titulo="Inscrições por status em todo o portal"
+                unidade="inscrições"
+                rotuloCentro="inscrições"
+                textoVazio="Nenhuma inscrição registrada no portal."
+              />
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <h3 className="font-bold text-gray-900">Inscrições por mês</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                Últimos 12 meses (meses sem inscrição aparecem zerados)
+              </p>
+              <GraficoBarras
+                dados={series.inscricoesPorMes}
+                titulo="Inscrições por mês em todo o portal (últimos 12 meses)"
+                unidade="inscrições"
+                textoVazio="Nenhuma inscrição registrada no portal."
+              />
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <h3 className="font-bold text-gray-900">Projetos publicados por área</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                {series.totalProjetosPublicados} projeto(s) publicado(s)
+              </p>
+              <GraficoBarrasHorizontais
+                dados={series.projetosPorArea}
+                titulo="Projetos publicados por área"
+                unidade="projetos"
+                textoVazio="Nenhum projeto publicado."
+              />
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <h3 className="font-bold text-gray-900">Editais publicados por categoria</h3>
+              <p className="text-xs text-gray-500 mb-4">
+                {series.totalEditaisPublicados} edital(is) publicado(s)
+              </p>
+              <GraficoRosca
+                dados={series.editaisPorCategoria}
+                titulo="Editais publicados por categoria"
+                unidade="editais"
+                rotuloCentro="editais"
+                textoVazio="Nenhum edital publicado."
+              />
+            </div>
           </div>
         )}
       </div>
