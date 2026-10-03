@@ -257,7 +257,120 @@ model Edital {
 
 ---
 
-## 11. Sync SUAP: manual, sem cron e sem tratamento de conflitos
+## 11. Hospedagem: VPS própria vs. Vercel + Supabase
+
+**Contexto (2026, pré-lançamento):**
+→ O sistema estava implantado na Vercel, com banco no Supabase (`uodkwdaruqrnprqkpgqr`,
+org "DebysBru's Org", compute NANO, região `aws-1-sa-east-1`).
+
+**Decisão:**
+→ **Hospedar tudo na VPS própria** (RackNerd, `198.44.123.154`, nginx 1.20.1,
+que já serve outros projetos sob `ifcoding.com.br`): aplicação Next.js,
+**PostgreSQL local com pgvector** e **armazenamento de arquivos em disco**.
+
+**Justificativa:**
+- **Limite de upload:** a Vercel corta o corpo da requisição em ~4,5 MB. O requisito
+  é 10 MB para PDF e 5 MB para imagem, o que **não é atingível** sem contornar a
+  plataforma (upload direto do navegador para a VPS).
+- **Armazenamento:** "guardar no próprio servidor" é incompatível com função
+  serverless — o filesystem é somente leitura exceto `/tmp`, que é efêmero e não
+  compartilhado entre invocações. Comprovação: a rota `api/admin/suap/token`
+  grava `.suap-token.json` e **sempre falha** na Vercel.
+- **pgvector:** no Supabase, instalar a extensão é uma ação manual no painel e
+  nunca foi feita — deixando o RAG em fallback silencioso. Em Postgres próprio
+  vira `CREATE EXTENSION vector;`.
+- **Latência e pooler:** o app serverless exigia o pooler do Supabase; com o
+  banco no mesmo host, a conexão é local.
+- **Pausa por inatividade:** o cron `keep-db-alive` existe só por causa do
+  Supabase. Um Postgres local nunca pausa — o cron deixa de ser necessário.
+- **Autonomia:** banco e repositório estavam em contas de terceiros. App, dados
+  e arquivos passam a ficar sob controle do projeto.
+
+**Tradeoff aceito:**
+- **Backup passa a ser responsabilidade do projeto.** Sem o Supabase não há
+  backup gerenciado (o painel mostrava "No backups"). O script está em
+  `deploy/MIGRACAO_SUPABASE_PARA_VPS.md` §5 e **precisa ser testado** pelo menos
+  uma vez restaurando num banco descartável.
+- A VPS é ponto único de falha (app + banco + arquivos no mesmo host), o que não
+  era o caso com Vercel + Supabase separados.
+
+**Implementação:**
+- `deploy/setup-postgres-local.sh` — PostgreSQL 16 (repo oficial PGCG) + `postgresql-16-pgvector`
+- `deploy/setup-portal-subdomain.sh` + `deploy/nginx-portal.ifcoding.com.br.conf` — vhost e TLS do subdomínio
+- `deploy/MIGRACAO_SUPABASE_PARA_VPS.md` — dump/restore, `.env`, backup, checklist
+- `src/lib/file-storage.ts` — armazenamento local (10 MB PDF / 5 MB imagem)
+- `src/app/api/files/upload/route.ts` — upload autenticado
+
+**Repositório canônico:** `github.com/profronan16/PortalConecta2.0`
+(a Vercel estava conectada a `DebysBru/PortalConecta2.0` — divergência que será
+eliminada junto com a saída da Vercel).
+
+**Registrado em:** DECISIONS.md (este arquivo)
+**Impacto:** §2.3, §3.8, §5.3, §7, §8, §10.1 (e substitui o item "Storage:
+Firebase Storage" da Decisão 1)
+
+---
+
+## 12. Editais: professor publica, admin modera
+
+**Contexto:**
+→ Publicar edital era exclusivo do Administrador Geral (`createEdital` em
+`src/actions/admin.ts`). O painel do professor não tinha **nenhuma** função de
+edital, apesar do requisito de que o professor publica os editais dos seus
+projetos.
+
+**Decisão:**
+→ **Professor publica editais vinculados aos seus próprios projetos; o
+Administrador Geral mantém a válvula de moderação.**
+
+**Implementação:**
+- `Edital.projetoId` (opcional, `onDelete: SetNull`) + relação inversa `Projeto.editais`.
+  Editais institucionais sem projeto continuam válidos.
+- Autorização em `podeGerenciarEdital`: admin passa sempre; professor só se for
+  coordenador/vice/admin do projeto do edital **ou** o autor original. Trocar o
+  `projetoId` para projeto alheio é bloqueado.
+- Edital nasce `review_status: 'PUBLICADO'`, que é a condição exigida pela
+  página pública `/editais`. O professor pode despublicar; o admin também, pelo
+  painel dele.
+- Slug com sufixo de timestamp (o admin usa apenas `slugify` e colide com título
+  repetido).
+- Excluir o edital remove o PDF do disco **depois** do registro sair do banco,
+  para não deixar registro apontando para arquivo inexistente.
+
+**Registrado em:** DECISIONS.md (este arquivo)
+**Impacto:** §3.2 (editais), painel do professor
+
+---
+
+## 13. Armazenamento de arquivos: disco local servido pelo nginx
+
+**Decisão:**
+→ **Arquivos no disco da VPS** (`STORAGE_ROOT`, padrão `/var/www/portal-files`),
+servidos diretamente pelo nginx em `/files/`, **sem** passar pelo processo Node.
+
+**Limites:** PDF 10 MB · PNG/JPG/WEBP/GIF 5 MB.
+
+**Justificativa de segurança** (todo arquivo vem de upload de usuário e é
+servido publicamente — é o vetor de ataque mais óbvio):
+1. **O nome original nunca toca o disco** — nome físico é UUID + extensão
+   derivada do tipo validado. Elimina travessia de diretório e nomes maliciosos.
+2. **Tipo detectado por magic bytes**, não por `file.type` nem pela extensão —
+   ambos controlados pelo cliente.
+3. **Travessia conferida de novo** no caminho resolvido (`path.relative` não
+   pode começar com `..`), como defesa em profundidade.
+4. Nginx **bloqueia execução** de `.php/.sh/.js/.html/.svg` dentro de `/files/`
+   e força PDF como `attachment` com `X-Content-Type-Options: nosniff`.
+
+**Tradeoff:** servir pelo nginx em vez do Node significa que um arquivo público
+não passa por checagem de sessão. Aceito porque o conteúdo (editais e imagens de
+posts) é público por natureza; **se algum dia for necessário arquivo
+restringido, ele não pode entrar em `/files/`** — precisa de rota autenticada.
+
+**Registrado em:** DECISIONS.md (este arquivo)
+
+---
+
+## 14. Sync SUAP: manual, sem cron e sem tratamento de conflitos
 
 **Contexto:**
 → O ROADMAP previa **5.4** sync agendada (cron) e **5.6** tratamento de conflitos de sincronização.
@@ -291,7 +404,10 @@ model Edital {
 | Fila manual | Pode estar lenta; MVP ok | 1+ | Escalar se necessário |
 | TODO calendário oficial | Dados de exemplo até então | 1 | Não bloqueia MVP |
 | Tabelas ausentes (tags, faq, favoritos) | MVP sem features avançadas | 2+ | Adicionar incrementalmente |
-| Sync SUAP manual (sem cron, sem conflitos) | Menos automação; exige ação do admin | 5 | Depende de credenciais do responsável; ver §11 |
+| **Hospedagem na VPS própria (Dec. 11)** | Sai Vercel + Supabase; backup passa a ser nosso; VPS vira ponto único de falha | pré-lançamento | Habilita 10MB/5MB e pgvector sem contorno |
+| **Professor publica editais (Dec. 12)** | `Edital.projetoId`; admin mantém moderação | pré-lançamento | Substitui fluxo "só admin publica" |
+| **Arquivos em disco local (Dec. 13)** | `/files/` servido pelo nginx, público; precisa rota autenticada se um dia for restrito | pré-lançamento | 10MB PDF / 5MB imagem |
+| Sync SUAP manual (sem cron, sem conflitos) | Menos automação; exige ação do admin | 5 | Depende de credenciais do responsável; ver §14 |
 
 ---
 

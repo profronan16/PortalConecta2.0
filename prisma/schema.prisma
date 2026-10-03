@@ -134,6 +134,11 @@ model Edital {
   destaque              Boolean              @default(false)
   authorId              String
   author                User                 @relation(fields: [authorId], references: [id])
+  // Projeto dono do edital — permite ao professor publicar/editais só dos
+  // SEUS projetos (a checagem usa `temAcessoAoProjeto`). Opcional porque
+  // editais institucionais (não vinculados a um projeto) continuam válidos.
+  projetoId             String?
+  projeto               Projeto?             @relation(fields: [projetoId], references: [id], onDelete: SetNull)
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
   deleted_at            DateTime?
@@ -145,6 +150,7 @@ model Edital {
   @@index([deleted_at])
   @@index([source])
   @@index([review_status])
+  @@index([projetoId])
 }
 
 // Registro de sincronizações com o SUAP
@@ -229,6 +235,7 @@ model Projeto {
   visualizacoes          Int                  @default(0)
   destaque               Boolean              @default(false)
   posts                  Post[]
+  editais                Edital[]
   admins                 User[]               @relation("ProjectAdmins")
   coordenadores          ProjectCoordinator[]
   inscricoes             Inscricao[]

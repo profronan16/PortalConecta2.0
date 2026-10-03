@@ -9,6 +9,15 @@ import {
 } from '@/lib/projetos-filtros';
 import { ProjetosExplorer } from './ProjetosExplorer';
 
+// `force-dynamic` é obrigatório aqui: sem ele o Next tenta pré-renderizar esta
+// página durante o BUILD, o que dispara consultas ao banco em tempo de
+// compilação. Em qualquer ambiente cujo banco não esteja acessível durante o
+// build, isso derruba o deploy inteiro com PrismaClientInitializationError:
+// "Can't reach database server". As demais páginas públicas (`/`, `/editais`,
+// `/agenda`) já tinham esta flag — `/projetos` era a única que faltava.
+// (A antiga `revalidate = 300` saiu: a página é dinâmica por ler searchParams.)
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'Projetos',
   description: 'Diretório completo dos projetos de extensão, pesquisa e ensino do IFPR Campus Ivaiporã.',

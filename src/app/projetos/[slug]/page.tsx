@@ -5,7 +5,7 @@ import {
   ChevronRight, Users, Mail, Instagram, Globe, ArrowLeft,
   BookOpen, Calendar, ArrowRight, Image as ImageIcon, HelpCircle,
 } from 'lucide-react';
-import { getStatusLabel, getStatusColor } from '@/lib/utils';
+import { getStatusLabel, getStatusColor, formatDate } from '@/lib/utils';
 import { stripHtml } from '@/lib/rich-text';
 import { SafeHtml } from '@/components/ui/SafeHtml';
 import { BotaoFavorito } from '@/components/ui/BotaoFavorito';
@@ -34,6 +34,29 @@ export default async function ProjetoPage({ params }: { params: Params }) {
       faq: { orderBy: { ordem: 'asc' } },
       tags: true,
       cursos: true,
+      // Vagas reais cadastradas pelo professor (model Vaga), não os campos
+      // inteiros legados `vagasBolsista`/`vagasVoluntario`. Sem isso a página
+      // pública mostrava só os números do campo antigo e o estudante não tinha
+      // como saber QUAIS vagas existem — nem que existe uma vaga de voluntário
+      // com requisitos próprios, por exemplo.
+      vagas: {
+        where: { status: { in: ['ABERTA', 'EM_SELECAO'] } },
+        orderBy: [{ tipo: 'asc' }, { createdAt: 'asc' }],
+        select: {
+          id: true,
+          titulo: true,
+          tipo: true,
+          descricao: true,
+          requisitos: true,
+          quantidade: true,
+          valorBolsa: true,
+          cargaHorariaSemanal: true,
+          vigenciaMeses: true,
+          fontePagadora: true,
+          dataEncerramento: true,
+          status: true,
+        },
+      },
       coordenadores: {
         include: { user: { select: { name: true, email: true } } },
       },
@@ -130,6 +153,80 @@ export default async function ProjetoPage({ params }: { params: Params }) {
                 <p className="text-gray-500 italic">Nenhuma descrição informada para este projeto.</p>
               )}
             </div>
+
+            {/* Vagas abertas — vagas reais (model Vaga), cadastradas pelo professor */}
+            {projeto.vagas.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                    <Users className="w-5 h-5" style={{ color: projeto.corPrimaria }} />
+                    Vagas Abertas
+                  </h2>
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-green-50 text-green-700">
+                    {projeto.vagas.reduce((s, v) => s + v.quantidade, 0)} posição(ões)
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {projeto.vagas.map((v) => {
+                    const rotulo = v.tipo === 'AMBOS'
+                      ? 'Bolsista ou Voluntário'
+                      : v.tipo === 'BOLSISTA' ? 'Bolsista' : 'Voluntário';
+                    return (
+                      <div key={v.id} className="border border-gray-100 rounded-xl p-4">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <p className="font-semibold text-gray-900 text-sm">{v.titulo}</p>
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                            v.tipo === 'BOLSISTA'
+                              ? 'bg-blue-50 text-blue-700'
+                              : v.tipo === 'VOLUNTARIO'
+                                ? 'bg-purple-50 text-purple-700'
+                                : 'bg-amber-50 text-amber-700'
+                          }`}>
+                            {rotulo}
+                          </span>
+                          {v.status === 'EM_SELECAO' && (
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-orange-50 text-orange-700">
+                              Em seleção
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mb-2">
+                          <span><strong className="text-gray-700">{v.quantidade}</strong> vaga(s)</span>
+                          {v.valorBolsa ? <span>R$ {v.valorBolsa.toFixed(2)}/mês</span> : null}
+                          {v.cargaHorariaSemanal ? <span>{v.cargaHorariaSemanal}h semanais</span> : null}
+                          {v.vigenciaMeses ? <span>{v.vigenciaMeses} meses</span> : null}
+                          {v.fontePagadora ? <span>{v.fontePagadora}</span> : null}
+                          {v.dataEncerramento ? (
+                            <span>inscrições até {formatDate(v.dataEncerramento)}</span>
+                          ) : null}
+                        </div>
+
+                        {v.descricao && (
+                          <p className="text-sm text-gray-600 mb-1">{v.descricao}</p>
+                        )}
+                        {v.requisitos && (
+                          <p className="text-xs text-gray-500">
+                            <strong className="text-gray-600">Requisitos:</strong> {v.requisitos}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {projeto.inscricoes_abertas && (
+                  <Link
+                    href={`/inscricao/${projeto.slug}`}
+                    className="mt-4 inline-flex items-center justify-center gap-2 w-full bg-azul-eletrico text-white font-semibold px-5 py-3 rounded-xl hover:bg-azul-eletrico/90 transition-all text-sm"
+                  >
+                    Inscrever-se nesta vaga
+                    <ArrowRight className="w-4 h-4" />
+                  </Link>
+                )}
+              </div>
+            )}
 
             {/* Tags */}
             {projeto.tags.length > 0 && (

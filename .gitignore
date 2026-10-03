@@ -40,6 +40,13 @@ next-env.d.ts
 # prisma
 prisma/generated
 
+# arquivos enviados (armazenamento local) — conteúdo de upload nunca versionado
+/storage/
+portal-files/
+
+# logs de build locais
+build-*.log
+
 # IDE
 .vscode/
 .idea/

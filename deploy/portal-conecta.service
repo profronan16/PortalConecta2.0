@@ -1,0 +1,96 @@
+# ==============================================================================
+# Portal Conecta 2.0 — serviço systemd (app Next.js na VPS)
+#
+# INSTALAÇÃO:
+#   1. Criar o usuário do serviço (sem shell, sem home):
+#        useradd --system --no-create-home --shell /usr/sbin/nologin portal
+#
+#   2. Preparar as pastas e permissões:
+#        mkdir -p /var/www/portal-conecta /var/www/portal-files
+#        chown -R portal:portal /var/www/portal-conecta /var/www/portal-files
+#        chmod 755 /var/www/portal-files
+#
+#   3. Copiar este arquivo:
+#        cp deploy/portal-conecta.service /etc/systemd/system/portal-conecta.service
+#
+#   4. Habilitar e subir:
+#        systemctl daemon-reload
+#        systemctl enable --now portal-conecta
+#        systemctl status portal-conecta
+#
+#   5. Ver os logs:
+#        journalctl -u portal-conecta -f
+# ==============================================================================
+
+[Unit]
+Description=Portal Conecta 2.0 (Next.js)
+Documentation=https://github.com/profronan16/PortalConecta2.0
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=portal
+Group=portal
+WorkingDirectory=/var/www/portal-conecta
+
+# As variáveis (inclusive segredos) vêm do .env — nunca deste arquivo, que é
+# versionado no Git.
+EnvironmentFile=/var/www/portal-conecta/.env
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+# `next start` usa o build já gerado por `npm run build`. Não use `next dev`.
+ExecStart=/usr/bin/npm run start -- --port 3000
+
+# ------------------------------------------------------------------------------
+# Reinício automático
+# ------------------------------------------------------------------------------
+Restart=always
+RestartSec=5
+# Desiste depois de 5 falhas em 60s, para não entrar em loop infinito se o app
+# estiver com erro de configuração (ex.: DATABASE_URL inválida).
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# ------------------------------------------------------------------------------
+# Encerramento limpo
+# ------------------------------------------------------------------------------
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# ------------------------------------------------------------------------------
+# Endurecimento (o app não precisa de privilégio nenhum)
+# ------------------------------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+
+# `ProtectSystem=full` deixa /usr, /boot e /etc somente leitura, mas /var
+# continua gravável — que é exatamente o que precisamos para
+# /var/www/portal-files (armazenamento local dos arquivos enviados).
+ReadWritePaths=/var/www/portal-files
+
+# ------------------------------------------------------------------------------
+# Recursos (ajuste conforme a RAM da VPS)
+# ------------------------------------------------------------------------------
+LimitNOFILE=65535
+MemoryMax=1G
+
+# ------------------------------------------------------------------------------
+# Logs
+# ------------------------------------------------------------------------------
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=portal-conecta
+
+[Install]
+WantedBy=multi-user.target

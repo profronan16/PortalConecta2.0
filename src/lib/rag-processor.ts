@@ -3,6 +3,8 @@
  * Organiza texto, extrai links, gera tags - economico em tokens
  */
 
+import { DEEPSEEK_MODEL } from '@/lib/llm';
+
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
 
@@ -75,7 +77,7 @@ ${conteudoLimitado}`;
         'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: DEEPSEEK_MODEL,
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.3,
         max_tokens: 1000,

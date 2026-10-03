@@ -1,6 +1,7 @@
 'use server';
 
 import { prisma } from '@/lib/prisma';
+import { DEEPSEEK_MODEL } from '@/lib/llm';
 
 type ActionResult<T = void> = { ok: true; data?: T } | { ok: false; error: string };
 
@@ -62,7 +63,7 @@ Responda APENAS com as tags separadas por vírgula (máximo 5 tags). Exemplo: Te
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'deepseek-chat',
+      model: DEEPSEEK_MODEL,
       messages: [
         { role: 'system', content: 'Você é um classificador de projetos acadêmicos. Responda apenas com tags separadas por vírgula.' },
         { role: 'user', content: prompt },
