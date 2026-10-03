@@ -164,10 +164,16 @@ export default function SuapSyncPage() {
 
     setSavingToken(true);
     try {
+      // O servidor confere o ID token e exige o Administrador Geral a partir do
+      // e-mail DO TOKEN — o `adminEmail` que ia no corpo não é mais aceito.
+      const idToken = await user.getIdToken();
       const response = await fetch('/api/admin/suap/token', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: tokenInput.trim(), adminEmail: user.email }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ token: tokenInput.trim() }),
       });
 
       const result = await response.json();

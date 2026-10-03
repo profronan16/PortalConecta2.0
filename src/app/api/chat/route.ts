@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { cache } from '@/lib/cache';
 import { generateEmbedding } from '@/lib/embeddings';
-import { searchSimilarChunks } from '@/lib/supabase-vector';
+import { searchSimilarChunks } from '@/lib/busca-vetorial';
 import { createLogger } from '@/lib/logger';
 import { DEEPSEEK_MODEL } from '@/lib/llm';
 

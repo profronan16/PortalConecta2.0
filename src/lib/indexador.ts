@@ -7,7 +7,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { generateBatchEmbeddings, validateEmbedding } from '@/lib/embeddings';
-import { saveChunksWithEmbeddings } from '@/lib/supabase-vector';
+import { saveChunksWithEmbeddings } from '@/lib/busca-vetorial';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('indexador');

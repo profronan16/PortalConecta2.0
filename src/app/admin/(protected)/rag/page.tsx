@@ -185,8 +185,13 @@ export default function AdminRagPage() {
   };
 
   const handleViewDoc = async (docId: string) => {
-    if (!user?.email) return;
-    const response = await fetch(`/api/admin/rag/docs?id=${docId}&adminEmail=${encodeURIComponent(user.email)}`);
+    if (!user) return;
+    // Identidade vai no header (token verificado no servidor) — antes era o
+    // e-mail na query, que o servidor aceitava como prova de quem era o admin.
+    const idToken = await user.getIdToken();
+    const response = await fetch(`/api/admin/rag/docs?id=${docId}`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
     const result = await response.json();
     if (result.ok && result.data) {
       setSelectedDoc(result.data);

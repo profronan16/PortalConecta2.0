@@ -3,7 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import { createHash } from 'crypto';
 import { chunkDocument } from '@/lib/chunking';
-import { deactivateOldDocumentVersions } from '@/lib/supabase-vector';
+import { deactivateOldDocumentVersions } from '@/lib/busca-vetorial';
 import { curarDocumentoKb } from '@/lib/kb-worker';
 import { indexarDocumentoKb } from '@/lib/indexador';
 

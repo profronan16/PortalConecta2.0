@@ -1,20 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { exigirAdmin } from '@/lib/admin-auth';
 
-async function isAdmin(email: string | null): Promise<boolean> {
-  if (!email) return false;
-  const user = await prisma.user.findUnique({ where: { email }, select: { role: true } });
-  return user?.role === 'ADMIN';
-}
+/**
+ * Gestão de documentos do RAG (consulta, edição e exclusão).
+ *
+ * Autorização por ID token do Firebase no header `Authorization: Bearer <token>`
+ * (ver src/lib/admin-auth.ts). Antes, o e-mail do admin vinha por query string ou
+ * corpo JSON — bastava conhecer o e-mail administrativo para se passar por admin.
+ */
 
-// GET: Buscar documento com chunks
 export async function GET(request: NextRequest) {
-  const id = request.nextUrl.searchParams.get('id');
-  const adminEmail = request.nextUrl.searchParams.get('adminEmail');
+  const auth = await exigirAdmin(request);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  if (!(await isAdmin(adminEmail))) {
-    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
-  }
+  const id = request.nextUrl.searchParams.get('id');
   if (!id) {
     return NextResponse.json({ error: 'ID obrigatório' }, { status: 400 });
   }
@@ -31,14 +31,18 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ ok: true, data: doc });
 }
 
-// PUT: Atualizar documento (título, ativo)
 export async function PUT(request: NextRequest) {
-  const body = await request.json();
-  const { id, titulo, ativo, adminEmail } = body;
+  const auth = await exigirAdmin(request);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  if (!(await isAdmin(adminEmail))) {
-    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
+  let body: { id?: string; titulo?: string; ativo?: boolean };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Corpo inválido' }, { status: 400 });
   }
+
+  const { id, titulo, ativo } = body;
   if (!id) {
     return NextResponse.json({ error: 'ID obrigatório' }, { status: 400 });
   }
@@ -63,14 +67,11 @@ export async function PUT(request: NextRequest) {
   return NextResponse.json({ ok: true, data: updated });
 }
 
-// DELETE: Excluir documento e chunks
 export async function DELETE(request: NextRequest) {
-  const id = request.nextUrl.searchParams.get('id');
-  const adminEmail = request.nextUrl.searchParams.get('adminEmail');
+  const auth = await exigirAdmin(request);
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
-  if (!(await isAdmin(adminEmail))) {
-    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 });
-  }
+  const id = request.nextUrl.searchParams.get('id');
   if (!id) {
     return NextResponse.json({ error: 'ID obrigatório' }, { status: 400 });
   }

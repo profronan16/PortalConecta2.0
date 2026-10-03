@@ -108,7 +108,7 @@
 - [x] **4.2** Migrar `embedding` para pgvector — `prisma/pgvector-setup.sql` (HNSW + cosine)
 - [x] **4.3** Ingestão de documentos publicados (`src/lib/indexador.ts`, `src/lib/kb-worker.ts`)
 - [x] **4.4** Geração de embeddings (`src/lib/embeddings.ts`, `src/lib/rag-processor.ts`)
-- [x] **4.5** Busca vetorial com filtro de permissão (`src/lib/supabase-vector.ts`, `src/lib/curador.ts`)
+- [x] **4.5** Busca vetorial com filtro de permissão (`src/lib/busca-vetorial.ts`, `src/lib/curador.ts`)
 - [x] **4.6** Chat com citações e guardrails — `/api/chat` + `ChatWidget`; curadoria de fontes
 - [x] **4.7** Painel admin de RAG com upload e reindexação — `src/app/admin/(protected)/rag`
 

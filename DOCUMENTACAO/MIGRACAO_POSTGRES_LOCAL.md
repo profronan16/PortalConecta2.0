@@ -14,7 +14,7 @@ Supabase), enquanto produção continuava funcionando em outro arranjo.
 
 O código **não dependia da REST/Storage do Supabase**: a busca vetorial do RAG já
 usava SQL direto via Prisma (`prisma.$queryRawUnsafe` com o operador `<=>` em
-`src/lib/supabase-vector.ts`), e `src/lib/supabase.ts` (cliente REST) **não é
+`src/lib/busca-vetorial.ts`), e `src/lib/supabase.ts` (cliente REST) **não é
 importado por ninguém** — é código morto. Ou seja: a migração era só trocar a
 conexão de banco.
 

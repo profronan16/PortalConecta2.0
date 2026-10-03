@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Supabase Vector Client — Operações Vetoriais em Postgres + pgvector
  * 
  * Gerencia inserção de chunks com embeddings vetoriais e execução de busca
@@ -9,7 +9,7 @@ import { prisma } from '@/lib/prisma';
 import { cosineSimilarity } from '@/lib/embeddings';
 import { createLogger } from '@/lib/logger';
 
-const log = createLogger('supabase-vector');
+const log = createLogger('busca-vetorial');
 
 export interface ChunkToInsert {
   id?: string;
