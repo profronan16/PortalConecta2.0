@@ -2,7 +2,7 @@
 
 **Status:** ✅ Roadmap executado — 6 de 6 fases em 100%
 **Última atualização:** 2026-09-16 (execução completa do roadmap)
-**Deploy:** https://portal-conecta2-0.vercel.app
+**Deploy:** https://portal.ifcoding.com.br (VPS próprio — a Vercel saiu de cena)
 **Base de código:** partiu de `f86208d` (16/09/2026) e foi concluído em `1854f22`
 
 > Este documento foi reconciliado com o código real em 16/09/2026. A revisão anterior
@@ -20,7 +20,7 @@
 | **5.4** Sync SUAP agendada (cron) | Depende de informações/credenciais do responsável; a sincronização permanece **manual**, disparada pelo admin. |
 | **5.6** Tratamento de conflitos de sync | Cenário de conflito não deve existir no fluxo adotado (sync manual e revisado). |
 
-> O único cron do projeto permanece `/api/cron/keep-db-alive` (ver [vercel.json](../vercel.json)).
+> O cron `/api/cron/keep-db-alive` **foi removido** (junto com o bloco `crons` do `vercel.json`): ele existia só para o Supabase não pausar por inatividade, e o banco agora é um PostgreSQL próprio.
 
 ---
 
@@ -55,7 +55,7 @@
 - [x] **1.16** Testes: critérios de aceite §14 — infra Vitest (`npm test`) + **13 arquivos de teste** cobrindo: métricas (home × admin), filtros/paginação de projetos, edição controlada SUAP, proteção de edição manual, permissões e papéis, visibilidade de editais, inscrição (LGPD/validações/rate limit), idempotência do sync SUAP, agenda `.ics`, sanitização XSS, chunking do RAG, busca global, séries de relatórios e área do estudante.
       Seguem **manuais** (não automatizáveis aqui): responsividade/aparência, acessibilidade AA, ponta a ponta de upload de PDF e qualidade das respostas da IFizinha — roteiro em [RELATORIO_TESTES.md](../RELATORIO_TESTES.md) e [PLANO_DE_TESTES_E_VALIDACAO.md](../PLANO_DE_TESTES_E_VALIDACAO.md).
 - [x] **1.17** View `public_metrics` para padronizar home × admin — `prisma/public-metrics-setup.sql` + `src/lib/metrics.ts`.
-      **Ação manual pendente no banco:** aplicar `prisma/public-metrics-setup.sql` no Supabase (enquanto isso a app usa contagem ao vivo com os mesmos filtros).
+      Aplicado nos dois bancos (cluster local de desenvolvimento e PostgreSQL do VPS em produção); sem a view a app usa contagem ao vivo com os mesmos filtros.
 
 ---
 
@@ -198,7 +198,7 @@ Achadas ao escrever os testes dos critérios §14 — todas corrigidas e com tes
 9. **4.8** Testes da camada determinística do RAG (chunking) — pendente só a avaliação de qualidade de resposta
 
 ### ⏭️ Ações manuais que dependem de você
-- **Aplicar `prisma/public-metrics-setup.sql`** no Supabase para ativar a view materializada das métricas (sem isso, a app usa contagem ao vivo — correto, só menos econômico).
+- **Nada pendente de banco**: o SQL das métricas já foi aplicado em produção (PostgreSQL do VPS) e no cluster local de desenvolvimento.
 - **Revisar o `RELATORIO_TESTES.md`** para o que não é automatizável: aparência/responsividade, acessibilidade AA e um teste ponta a ponta de upload de PDF → revisão → publicação.
 - **Validar o sync SUAP** com o token real e conferir o campo `preservados` no relatório do painel admin (comportamento novo: não sobrescreve mais edição manual).
 - **Decidir sobre o envio de e-mail**: `RESEND_API_KEY` já é opcional em runtime, mas os avisos por e-mail (confirmação de inscrição, mudança de status e alertas) só saem com a chave configurada.
