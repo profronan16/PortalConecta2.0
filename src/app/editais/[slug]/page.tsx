@@ -8,6 +8,7 @@ import {
 import { formatDate, getDaysUntil, getStatusLabel, getStatusColor, getCategoryColor } from '@/lib/utils';
 import { prisma } from '@/lib/prisma';
 import { BotaoFavorito } from '@/components/ui/BotaoFavorito';
+import { buscarEditalPublicoPorSlug, buscarResumoEditalPublico } from '@/lib/editais-publicos';
 import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
@@ -59,10 +60,8 @@ function normalizarTraducao(raw: unknown): TraducaoIFizinha {
 }
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const edital = await prisma.edital.findUnique({
-    where: { slug: params.slug },
-    select: { titulo: true, resumoSimples: true, resumo: true },
-  });
+  // Respeita a visibilidade pública: rascunho não vaza nem no metadata.
+  const edital = await buscarResumoEditalPublico(params.slug);
   if (!edital) return { title: 'Edital não encontrado' };
   return {
     title: edital.titulo,
@@ -71,9 +70,9 @@ export async function generateMetadata({ params }: { params: { slug: string } })
 }
 
 export default async function EditalDetalhePage({ params }: { params: { slug: string } }) {
-  const edital = await prisma.edital.findUnique({
-    where: { slug: params.slug },
-    select: {
+  // Só edital PUBLICADO e não deletado chega ao público (ver
+  // src/lib/editais-publicos.ts — antes daqui um rascunho era acessível pela URL).
+  const edital = await buscarEditalPublicoPorSlug(params.slug, {
       id: true,
       titulo: true,
       slug: true,
@@ -99,8 +98,7 @@ export default async function EditalDetalhePage({ params }: { params: { slug: st
       publicoAlvo: true,
       localInscricao: true,
       linkInscricao: true,
-    },
-  });
+    });
 
   if (!edital) notFound();
 

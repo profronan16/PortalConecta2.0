@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { BookOpen, Clock, Search, Filter, AlertCircle, ChevronRight, Sparkles, ExternalLink } from 'lucide-react';
 import { formatDateShort, getDaysUntil, getStatusLabel, getStatusColor, getCategoryColor } from '@/lib/utils';
 import { prisma } from '@/lib/prisma';
+import { EDITAL_PUBLICO_WHERE } from '@/lib/editais-publicos';
 import { withCache } from '@/lib/cache';
 import type { Metadata } from 'next';
 
@@ -18,10 +19,8 @@ const categorias = ['Todas', 'BOLSAS', 'AUXILIOS', 'PESQUISA', 'EXTENSAO', 'ENSI
 
 export default async function EditaisPage() {
   const editais = await withCache('editais:published', () => prisma.edital.findMany({
-    where: {
-      review_status: 'PUBLICADO',
-      deleted_at: null,
-    },
+    // Fonte única da regra "edital visível ao público" (src/lib/editais-publicos.ts).
+    where: EDITAL_PUBLICO_WHERE,
     orderBy: { updatedAt: 'desc' },
     select: {
       id: true,

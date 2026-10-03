@@ -1,6 +1,30 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const REMETENTE = 'Portal Conecta IFPR <noreply@portal-conecta2-0.vercel.app>';
+
+let resendClient: Resend | null = null;
+
+/**
+ * Cliente do Resend criado SOB DEMANDA.
+ *
+ * Antes o cliente era construído no topo do módulo (`new Resend(process.env.RESEND_API_KEY)`):
+ * sem a variável configurada, o simples IMPORT de `@/lib/email` lançava
+ * "Missing API key" — o que derrubava qualquer rota que só importasse o módulo,
+ * inclusive Server Actions de inscrição que nem iam enviar e-mail. Agora a
+ * ausência da chave faz o envio falhar (com log), não o carregamento do módulo.
+ */
+function getResend(): Resend {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) throw new Error('RESEND_API_KEY não configurada — e-mail não enviado');
+
+  if (!resendClient) resendClient = new Resend(apiKey);
+  return resendClient;
+}
+
+/** Ponto único de envio, para o remetente e o tratamento de erro não divergirem. */
+async function enviarEmail(payload: { to: string; subject: string; html: string }) {
+  return getResend().emails.send({ from: REMETENTE, ...payload });
+}
 
 interface InscricaoEmailData {
   protocolo: string;
@@ -121,8 +145,7 @@ export async function enviarConfirmacaoInscricao(data: InscricaoEmailData) {
   `;
 
   try {
-    await resend.emails.send({
-      from: 'Portal Conecta IFPR <noreply@portal-conecta2-0.vercel.app>',
+    await enviarEmail({
       to: email,
       subject: `Inscrição Confirmada — ${projetoNome} (${protocolo})`,
       html: wrapEmail(content),
@@ -199,8 +222,7 @@ export async function enviarAtualizacaoStatus(data: StatusUpdateEmailData) {
   `;
 
   try {
-    await resend.emails.send({
-      from: 'Portal Conecta IFPR <noreply@portal-conecta2-0.vercel.app>',
+    await enviarEmail({
       to: email,
       subject: `Status Atualizado — ${projetoNome} (${protocolo})`,
       html: wrapEmail(content),
@@ -239,8 +261,7 @@ export async function enviarBoasVindas(email: string, nome: string) {
   `;
 
   try {
-    await resend.emails.send({
-      from: 'Portal Conecta IFPR <noreply@portal-conecta2-0.vercel.app>',
+    await enviarEmail({
       to: email,
       subject: 'Bem-vindo(a) ao Portal Conecta IFPR!',
       html: wrapEmail(content),
@@ -301,8 +322,7 @@ export async function enviarAlertaEdital(data: AlertaEditalEmailData) {
   `;
 
   try {
-    await resend.emails.send({
-      from: 'Portal Conecta IFPR <noreply@portal-conecta2-0.vercel.app>',
+    await enviarEmail({
       to: email,
       subject: `Novo edital: ${editalTitulo}`,
       html: wrapEmail(content),
