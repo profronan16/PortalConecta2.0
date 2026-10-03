@@ -2,35 +2,28 @@ import React from 'react';
 import Link from 'next/link';
 import { FolderOpen, ChevronRight, TrendingUp, Sparkles, ArrowRight } from 'lucide-react';
 import type { Metadata } from 'next';
-import { prisma } from '@/lib/prisma';
-import { withCache } from '@/lib/cache';
+import { listProjetosPublicos } from '@/lib/projetos-publicos';
+import {
+  normalizarParamsProjetos,
+  type ProjetoSearchParams,
+} from '@/lib/projetos-filtros';
 import { ProjetosExplorer } from './ProjetosExplorer';
-
-export const revalidate = 300; // Revalidar a cada 5 minutos
 
 export const metadata: Metadata = {
   title: 'Projetos',
   description: 'Diretório completo dos projetos de extensão, pesquisa e ensino do IFPR Campus Ivaiporã.',
 };
 
-export default async function ProjetosPage() {
-  const projetos = await withCache('projetos:all', () => prisma.projeto.findMany({
-    orderBy: { nome: 'asc' },
-    select: {
-      id: true,
-      nome: true,
-      slug: true,
-      area: true,
-      coordenador: true,
-      status: true,
-      corPrimaria: true,
-      descricao: true,
-      destaque: true,
-    },
-  }), 5 * 60 * 1000);
-
-  const emExecucao = projetos.filter((p) => p.status === 'EM_EXECUCAO').length;
-  const inscricoesAbertas = projetos.filter((p) => p.status === 'INSCRICOES_ABERTAS').length;
+// Filtro e paginação acontecem no servidor (ROADMAP 1.15b): a página lê os
+// searchParams e busca apenas a página atual no banco.
+export default async function ProjetosPage({
+  searchParams,
+}: {
+  searchParams: ProjetoSearchParams;
+}) {
+  const params = normalizarParamsProjetos(searchParams);
+  const resultado = await listProjetosPublicos(params);
+  const { stats } = resultado;
 
   return (
     <div className="min-h-screen">
@@ -58,9 +51,9 @@ export default async function ProjetosPage() {
           {/* Stats */}
           <div className="mt-8 flex flex-wrap gap-4">
             {[
-              { label: 'Em Execução', value: emExecucao, color: 'bg-green-500' },
-              { label: 'Inscrições Abertas', value: inscricoesAbertas, color: 'bg-blue-500' },
-              { label: 'Total', value: projetos.length, color: 'bg-white/30' },
+              { label: 'Em Execução', value: stats.emExecucao, color: 'bg-green-500' },
+              { label: 'Inscrições Abertas', value: stats.inscricoesAbertas, color: 'bg-blue-500' },
+              { label: 'Total', value: stats.total, color: 'bg-white/30' },
             ].map((s) => (
               <div key={s.label} className="bg-white/15 backdrop-blur-sm rounded-xl px-5 py-3 border border-white/20 flex items-center gap-3">
                 <div className={`w-3 h-3 rounded-full ${s.color}`} />
@@ -74,7 +67,16 @@ export default async function ProjetosPage() {
 
       {/* Conteúdo */}
       <div className="container mx-auto px-4 max-w-7xl py-10">
-        <ProjetosExplorer projetos={projetos} />
+        <ProjetosExplorer
+          projetos={resultado.itens}
+          destaques={resultado.destaques}
+          total={resultado.total}
+          page={resultado.page}
+          totalPages={resultado.totalPages}
+          filtros={resultado.filtros}
+          filtrando={resultado.filtrando}
+          params={params}
+        />
 
         {/* CTA Participe */}
         <div className="mt-12 bg-gradient-to-br from-azul-eletrico/5 via-roxo-luminoso/5 to-rosa-vibrante/5 rounded-3xl border border-gray-100 p-8 md:p-10 text-center">

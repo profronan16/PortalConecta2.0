@@ -1,9 +1,19 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
-import { Search, Filter, Users, ArrowRight, Sparkles, FolderOpen } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import {
+  Search, Filter, Users, ArrowRight, Sparkles, FolderOpen,
+  ChevronLeft, ChevronRight, X, Loader2,
+} from 'lucide-react';
 import { getStatusLabel } from '@/lib/utils';
+import {
+  buildProjetosHref,
+  paginasVisiveis,
+  type ProjetoCard,
+  type ProjetoFiltroParams,
+} from '@/lib/projetos-filtros';
 
 // Versão leve, sem dependência, do `stripHtml` de '@/lib/rich-text' — aquele
 // usa `sanitize-html`, uma lib pensada pra rodar no servidor, que se
@@ -16,50 +26,75 @@ function stripHtmlLite(text: string | null | undefined): string {
   return text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-type Projeto = {
-  id: string;
-  nome: string;
-  slug: string;
-  area: string;
-  coordenador: string;
-  status: string;
-  corPrimaria: string;
-  descricao: string | null;
-  destaque: boolean;
+type Props = {
+  projetos: ProjetoCard[];
+  destaques: ProjetoCard[];
+  total: number;
+  page: number;
+  totalPages: number;
+  filtros: { areas: string[]; statuses: string[] };
+  filtrando: boolean;
+  params: Required<Pick<ProjetoFiltroParams, 'q' | 'area' | 'status' | 'page'>>;
 };
 
-export function ProjetosExplorer({ projetos }: { projetos: Projeto[] }) {
-  const [busca, setBusca] = useState('');
-  const [area, setArea] = useState('Todas');
-  const [status, setStatus] = useState('Todos');
+const DEBOUNCE_BUSCA_MS = 400;
 
-  // Opções derivadas dos projetos que realmente existem, não de uma lista
-  // fixa de todos os valores possíveis do enum — senão o filtro oferece
-  // status como "Ativo" mesmo quando nenhum projeto está nesse status hoje.
-  const areas = useMemo(
-    () => ['Todas', ...Array.from(new Set(projetos.map((p) => p.area).filter(Boolean))).sort()],
-    [projetos]
-  );
-  const statusOptions = useMemo(
-    () => ['Todos', ...Array.from(new Set(projetos.map((p) => p.status)))],
-    [projetos]
-  );
+/**
+ * Listagem pública de projetos — filtro e paginação no SERVIDOR (ROADMAP 1.15b).
+ *
+ * O componente é controlado pela URL: mudar filtro/busca/página navega para
+ * `/projetos?...`, o servidor refaz a consulta e devolve só a página atual.
+ * Vantagens: escala (não envia todos os projetos ao navegador), URL
+ * compartilhável/recarregável e "Total" consistente com o resto do site.
+ */
+export function ProjetosExplorer({
+  projetos,
+  destaques,
+  total,
+  page,
+  totalPages,
+  filtros,
+  filtrando,
+  params,
+}: Props) {
+  const router = useRouter();
+  const [busca, setBusca] = useState(params.q);
+  const [isPending, startTransition] = useTransition();
+  const primeiroRender = useRef(true);
 
-  const filtrados = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
-    return projetos.filter((p) => {
-      const matchBusca =
-        !termo ||
-        p.nome.toLowerCase().includes(termo) ||
-        p.coordenador.toLowerCase().includes(termo);
-      const matchArea = area === 'Todas' || p.area === area;
-      const matchStatus = status === 'Todos' || p.status === status;
-      return matchBusca && matchArea && matchStatus;
-    });
-  }, [projetos, busca, area, status]);
+  // Mantém o input em sincronia quando a URL muda por fora (voltar/avançar).
+  useEffect(() => {
+    setBusca(params.q);
+  }, [params.q]);
 
-  const hasFilter = busca.trim() !== '' || area !== 'Todas' || status !== 'Todos';
-  const destaques = projetos.filter((p) => p.destaque);
+  // Busca digitada: espera o usuário parar de digitar antes de ir ao servidor.
+  useEffect(() => {
+    if (primeiroRender.current) {
+      primeiroRender.current = false;
+      return;
+    }
+
+    const destino = buildProjetosHref({ ...params, q: busca }, 1);
+    const atual = buildProjetosHref(params, params.page);
+    if (destino === atual) return;
+
+    const timer = setTimeout(() => {
+      startTransition(() => router.replace(destino, { scroll: false }));
+    }, DEBOUNCE_BUSCA_MS);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busca]);
+
+  const aplicarFiltro = (patch: Partial<ProjetoFiltroParams>) => {
+    const destino = buildProjetosHref({ ...params, ...patch }, 1);
+    startTransition(() => router.push(destino, { scroll: false }));
+  };
+
+  const limparFiltros = () => {
+    setBusca('');
+    startTransition(() => router.push('/projetos', { scroll: false }));
+  };
 
   return (
     <>
@@ -72,36 +107,38 @@ export function ProjetosExplorer({ projetos }: { projetos: Projeto[] }) {
             placeholder="Buscar por nome ou coordenador..."
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-azul-eletrico focus:border-transparent"
+            className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-azul-eletrico focus:border-transparent"
           />
+          {isPending && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" />
+          )}
         </div>
         <div className="flex gap-3">
           <div className="flex items-center gap-2">
             <Filter className="w-4 h-4 text-gray-400" />
             <select
-              value={area}
-              onChange={(e) => setArea(e.target.value)}
+              value={params.area}
+              onChange={(e) => aplicarFiltro({ area: e.target.value })}
               className="pl-3 pr-8 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-azul-eletrico bg-white"
             >
-              <option value="Todas">Área: Todas</option>
-              {areas.slice(1).map((a) => <option key={a} value={a}>{a}</option>)}
+              <option value="">Área: Todas</option>
+              {filtros.areas.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
           </div>
           <select
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
+            value={params.status}
+            onChange={(e) => aplicarFiltro({ status: e.target.value })}
             className="pl-3 pr-8 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-azul-eletrico bg-white"
           >
-            <option value="Todos">Status: Todos</option>
-            {statusOptions.slice(1).map((s) => <option key={s} value={s}>{getStatusLabel(s)}</option>)}
+            <option value="">Status: Todos</option>
+            {filtros.statuses.map((s) => <option key={s} value={s}>{getStatusLabel(s)}</option>)}
           </select>
         </div>
       </div>
 
       {/* Projetos Destaque — só faz sentido sem filtro ativo (senão duplica
-          resultados que já aparecem, às vezes fora do filtro, na seção
-          "Todos") */}
-      {!hasFilter && destaques.length > 0 && (
+          resultados que já aparecem, às vezes fora do filtro, na seção "Todos") */}
+      {!filtrando && destaques.length > 0 && (
         <div className="mb-10">
           <div className="flex items-center gap-2 mb-5">
             <Sparkles className="w-5 h-5 text-dourado-ifizinha" />
@@ -151,27 +188,33 @@ export function ProjetosExplorer({ projetos }: { projetos: Projeto[] }) {
       )}
 
       {/* Todos os projetos / resultados da busca */}
-      <div>
+      <div className={isPending ? 'opacity-60 transition-opacity' : 'transition-opacity'}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-bold text-gray-900 text-lg">
-            {hasFilter ? `Resultados (${filtrados.length})` : `Todos os Projetos (${projetos.length})`}
+            {filtrando ? `Resultados (${total})` : `Todos os Projetos (${total})`}
           </h2>
+          {filtrando && (
+            <button
+              onClick={limparFiltros}
+              className="inline-flex items-center gap-1 text-sm text-azul-eletrico hover:underline"
+            >
+              <X className="w-3.5 h-3.5" />
+              Limpar filtros
+            </button>
+          )}
         </div>
 
-        {filtrados.length === 0 ? (
+        {projetos.length === 0 ? (
           <div className="text-center py-16 text-gray-500 bg-white rounded-2xl border border-gray-100">
             <FolderOpen className="w-10 h-10 mx-auto mb-3 opacity-40" />
             <p className="font-medium">Nenhum projeto encontrado com esses filtros</p>
-            <button
-              onClick={() => { setBusca(''); setArea('Todas'); setStatus('Todos'); }}
-              className="mt-3 text-sm text-azul-eletrico hover:underline"
-            >
+            <button onClick={limparFiltros} className="mt-3 text-sm text-azul-eletrico hover:underline">
               Limpar filtros
             </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filtrados.map((projeto) => (
+            {projetos.map((projeto) => (
               <Link key={projeto.id} href={`/projetos/${projeto.slug}`} className="group block">
                 <div className="bg-white rounded-2xl border border-gray-100 hover:border-gray-200 hover:shadow-md transition-all duration-200 hover:-translate-y-0.5 overflow-hidden">
                   <div className="h-2 w-full" style={{ backgroundColor: projeto.corPrimaria }} />
@@ -216,6 +259,64 @@ export function ProjetosExplorer({ projetos }: { projetos: Projeto[] }) {
               </Link>
             ))}
           </div>
+        )}
+
+        {/* Paginação server-side */}
+        {totalPages > 1 && (
+          <nav className="mt-8 flex items-center justify-center gap-1.5" aria-label="Paginação de projetos">
+            <Link
+              href={buildProjetosHref(params, Math.max(1, page - 1))}
+              aria-disabled={page <= 1}
+              tabIndex={page <= 1 ? -1 : undefined}
+              className={`inline-flex items-center gap-1 px-3 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                page <= 1
+                  ? 'border-gray-100 text-gray-300 pointer-events-none'
+                  : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Anterior
+            </Link>
+
+            {paginasVisiveis(page, totalPages).map((p, idx) =>
+              p === -1 ? (
+                <span key={`gap-${idx}`} className="px-2 text-gray-400">…</span>
+              ) : (
+                <Link
+                  key={p}
+                  href={buildProjetosHref(params, p)}
+                  aria-current={p === page ? 'page' : undefined}
+                  className={`min-w-[2.5rem] text-center px-3 py-2 rounded-xl border text-sm font-semibold transition-colors ${
+                    p === page
+                      ? 'bg-hero-gradient text-white border-transparent'
+                      : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {p}
+                </Link>
+              ),
+            )}
+
+            <Link
+              href={buildProjetosHref(params, Math.min(totalPages, page + 1))}
+              aria-disabled={page >= totalPages}
+              tabIndex={page >= totalPages ? -1 : undefined}
+              className={`inline-flex items-center gap-1 px-3 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                page >= totalPages
+                  ? 'border-gray-100 text-gray-300 pointer-events-none'
+                  : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Próxima
+              <ChevronRight className="w-4 h-4" />
+            </Link>
+          </nav>
+        )}
+
+        {totalPages > 1 && (
+          <p className="mt-4 text-center text-xs text-gray-400">
+            Página {page} de {totalPages} · {total} projetos publicados
+          </p>
         )}
       </div>
     </>
