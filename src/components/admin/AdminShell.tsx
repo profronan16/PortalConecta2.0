@@ -7,7 +7,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, FileText, FolderOpen, Calendar,
   Newspaper, Users, LogOut, Menu, X, Sparkles, ChevronRight, RefreshCw,
-  UserCircle, BarChart3, Trash2, Brain,
+  UserCircle, BarChart3, Trash2, Brain, ExternalLink,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -141,6 +141,18 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             <p className="text-white/50 text-xs truncate">{user.email}</p>
           </div>
           <UserCircle className="w-4 h-4 text-white/30 group-hover:text-white/60 transition-colors flex-shrink-0" />
+        </Link>
+
+        {/* Voltar ao site público — o painel é uma área separada, e sem este
+            atalho não havia NENHUM caminho de volta para a home a não ser
+            editar a URL na mão. */}
+        <Link
+          href="/"
+          onClick={onNavClick}
+          className="flex items-center gap-2 w-full px-3 py-2 mb-1 rounded-xl text-white/70 hover:bg-white/10 hover:text-white transition-all text-sm"
+        >
+          <ExternalLink className="w-4 h-4" />
+          Ver o portal
         </Link>
 
         <button

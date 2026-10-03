@@ -6,6 +6,14 @@ import { prisma } from '@/lib/prisma';
 import { withCache } from '@/lib/cache';
 import { ProjetosExplorer } from './ProjetosExplorer';
 
+// `force-dynamic` é obrigatório aqui: sem ele o Next tenta pré-renderizar esta
+// página durante o BUILD, o que dispara `prisma.projeto.findMany()` em tempo de
+// compilação. Em qualquer ambiente cujo banco não esteja acessível durante o
+// build (foi exatamente o caso da Vercel), isso derruba o deploy inteiro com
+// PrismaClientInitializationError: "Can't reach database server".
+// As demais páginas públicas (`/`, `/editais`, `/agenda`) já tinham esta flag —
+// `/projetos` era a única que faltava.
+export const dynamic = 'force-dynamic';
 export const revalidate = 300; // Revalidar a cada 5 minutos
 
 export const metadata: Metadata = {

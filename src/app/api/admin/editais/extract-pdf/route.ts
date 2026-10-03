@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { detectFileType, extractDocument, ALLOWED_EXTENSIONS } from '@/lib/document-extract';
 import { CategoriaEdital } from '@prisma/client';
+import { DEEPSEEK_MODEL } from '@/lib/llm';
 
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_WORDS = 6000;
@@ -146,7 +147,7 @@ export async function POST(request: NextRequest) {
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'deepseek-chat',
+        model: DEEPSEEK_MODEL,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: `Texto extraído do edital:\n\n${conteudo}` },

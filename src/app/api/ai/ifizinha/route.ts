@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { DEEPSEEK_MODEL } from '@/lib/llm';
 
 const SYSTEM_PROMPT = `Você é a IFizinha, assistente virtual do Portal Conecta do IFPR Campus Ivaiporã.
 Sua tarefa é traduzir editais institucionais para linguagem simples e acessível para estudantes.
@@ -52,7 +53,7 @@ Gere a tradução completa nos campos do JSON.`;
       'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'deepseek-chat',
+      model: DEEPSEEK_MODEL,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userMessage },

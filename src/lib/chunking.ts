@@ -26,30 +26,58 @@ const DEFAULT_CONFIG: ChunkingConfig = {
 // ~0.75 palavras por token é uma estimativa razoável para português.
 const WORDS_PER_TOKEN = 0.75;
 
-function detectHeading(line: string): boolean {
-  const t = line.trim();
-  if (!t || t.length > 90) return false;
-  if (/^#{1,6}\s/.test(t)) return true;
-  if (/^(art(igo)?\.?\s*\d+|cap[ií]tulo\s+\w+|se[cç][aã]o\s+\w+|\d+(\.\d+)*[).]\s+\S)/i.test(t)) return true;
-  if (t === t.toUpperCase() && /[A-ZÀ-Ú]/.test(t) && t.split(/\s+/).length <= 10 && !/[.,;:]$/.test(t)) return true;
-  return false;
-}
-
+/**
+ * Divide o texto em seções, preservando a estrutura de linhas.
+ *
+ * HISTÓRICO DO BUG (importante, para não regredir):
+ * a versão anterior criava uma NOVA SEÇÃO a cada linha "tipo título". Como
+ * `detectHeading` casa `^art(igo)?\.?\s*\d+`, a linha
+ * "ARTIGO 3. Cada estudante monitor cumpre carga horaria de 12 horas semanais,"
+ * era classificada como TÍTULO e **descartada do conteúdo** (virava
+ * `secao`), sobrando só o resto do artigo. Medido: o chunk ficava começando em
+ * "(oitocentos e setenta e tres reais)..." e a frase "12 horas semanais"
+ * desaparecia do conteúdo — a pergunta do usuário deixava de recuperá-la.
+ *
+ * Agora cada linha é um PARÁGRAFO (linhas separadas por linha em branco), então
+ * `chunkDocument` agrupa e corta respeitando limites de frase/artigo, em vez de
+ * fatiar por contagem de palavras no meio do texto.
+ */
 function splitIntoSections(text: string): Array<{ titulo: string | null; conteudo: string }> {
-  const lines = text.split('\n');
-  const sections: Array<{ titulo: string | null; conteudo: string[] }> = [{ titulo: null, conteudo: [] }];
+  const linhas = text.split('\n').map((l) => l.trim()).filter(Boolean);
 
-  for (const line of lines) {
-    if (detectHeading(line)) {
-      sections.push({ titulo: line.trim().replace(/^#{1,6}\s*/, ''), conteudo: [] });
-    } else {
-      sections[sections.length - 1].conteudo.push(line);
+  // Título de seção de verdade: só quando a linha é CURTA e o `secao` tem
+  // valor semântico (cabeçalho markdown ou linha curta em maiúsculas). A linha
+  // "ARTIGO N. <texto>" continua sendo conteúdo, porque é longa.
+  const linhasConteudo: string[] = [];
+  const secoes: Array<{ titulo: string | null; conteudo: string }> = [];
+  let tituloAtual: string | null = null;
+
+  for (const linha of linhas) {
+    const ehTituloMarkdown = /^#{1,6}\s/.test(linha);
+    const ehTituloCurto =
+      linha.length <= 80 &&
+      !/[.,;:]$/.test(linha) &&
+      linha === linha.toUpperCase() &&
+      linha.split(/\s+/).length <= 10;
+
+    if (ehTituloMarkdown || ehTituloCurto) {
+      // Fecha a seção anterior antes de começar outra
+      if (linhasConteudo.length > 0) {
+        secoes.push({ titulo: tituloAtual, conteudo: linhasConteudo.join('\n\n') });
+        linhasConteudo.length = 0;
+      }
+      tituloAtual = linha.replace(/^#{1,6}\s*/, '').trim();
+      continue;
     }
+
+    linhasConteudo.push(linha);
   }
 
-  return sections
-    .map((s) => ({ titulo: s.titulo, conteudo: s.conteudo.join('\n').trim() }))
-    .filter((s) => s.conteudo.length > 0);
+  if (linhasConteudo.length > 0) {
+    secoes.push({ titulo: tituloAtual, conteudo: linhasConteudo.join('\n\n') });
+  }
+
+  return secoes.filter((s) => s.conteudo.trim().length > 0);
 }
 
 export function chunkDocument(text: string, config: Partial<ChunkingConfig> = {}): StructuredChunk[] {
@@ -77,6 +105,19 @@ export function chunkDocument(text: string, config: Partial<ChunkingConfig> = {}
 
     for (const para of paragraphs) {
       const paraWords = para.split(/\s+/).filter(Boolean).length;
+      const ehInicioDeArtigo = /^(art(igo)?\.?\s*\d+|cap[ií]tulo\s+\w+|se[cç][aã]o\s+\w+)/i.test(para.trim());
+
+      // Um novo ARTIGO/CAPÍTULO começa um chunk novo, MESMO que ainda caiba no
+      // atual. Sem isso, vários artigos se fundem numa "bola" só: o embedding
+      // fica diluído entre vários assuntos e o modelo erra detalhes.
+      //
+      // Medido: um regulamento com 6 artigos virava 1 chunk. Perguntar "quantas
+      // horas semanais?" fazia o chat responder que "o documento não traz um
+      // número fixo" — mesmo com o Artigo 3 dizendo "12 horas semanais" no
+      // mesmo chunk. Com um chunk por artigo, cada embedding tem um assunto só.
+      if (ehInicioDeArtigo && current.length > 0) {
+        flush();
+      }
 
       if (paraWords > maxWords) {
         // Parágrafo sozinho já estoura o limite — quebra por palavras com overlap

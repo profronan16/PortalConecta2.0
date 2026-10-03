@@ -29,6 +29,42 @@ const DEFAULT_CONFIG: EmbeddingConfig = {
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /**
+ * Diagnóstico do provedor de embeddings.
+ *
+ * Motivo desta função existir: sem `GEMINI_API_KEY` o serviço **não falha** —
+ * ele cai no fallback determinístico (hash SHA-256 do texto), que gera vetores
+ * de 1536 dimensões válidos mas **sem nenhum significado semântico**. O
+ * sintoma é cruel: o chat continua respondendo, nada aparece no log de erro,
+ * e a busca vetorial simplesmente devolve resultados ruins. Em produção isso é
+ * indistinguível de um RAG funcionando, até alguém comparar a qualidade das
+ * respostas.
+ *
+ * Esta função permite que a tela de administração mostre um aviso explícito em
+ * vez de deixar a degradação invisível.
+ */
+export function getEmbeddingProviderStatus(): {
+  provider: string;
+  model: string;
+  dimensions: number;
+  semantico: boolean;
+  aviso: string | null;
+} {
+  const temChave = !!DEFAULT_CONFIG.apiKey;
+  return {
+    provider: temChave ? 'gemini' : 'fallback-deterministico',
+    model: DEFAULT_CONFIG.model,
+    dimensions: DEFAULT_CONFIG.dimensions,
+    semantico: temChave,
+    aviso: temChave
+      ? null
+      : 'GEMINI_API_KEY não configurada: os embeddings estão sendo gerados por hash ' +
+        'determinístico (fallback). A busca vetorial NÃO tem semântica real — ' +
+        'perguntas com sinônimos/paráfrase não encontram os documentos certos. ' +
+        'Configure GEMINI_API_KEY (tier gratuito do Google AI Studio) e reindexe.',
+  };
+}
+
+/**
  * Gera embedding para um único texto.
  */
 export async function generateEmbedding(

@@ -6,7 +6,8 @@ import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, FolderOpen, Users, FileText, BarChart3,
-  LogOut, Menu, X, Sparkles, ChevronRight, UserCircle,
+  LogOut, Menu, X, Sparkles, ChevronRight, UserCircle, ClipboardList,
+  ExternalLink,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -17,10 +18,11 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { href: '/professor',          label: 'Dashboard',  icon: LayoutDashboard },
-  { href: '/professor/projetos', label: 'Meus Projetos', icon: FolderOpen },
-  { href: '/professor/inscricoes', label: 'Inscrições', icon: Users },
-  { href: '/professor/relatorio', label: 'Relatórios', icon: BarChart3 },
+  { href: '/professor',            label: 'Dashboard',     icon: LayoutDashboard },
+  { href: '/professor/projetos',   label: 'Meus Projetos', icon: FolderOpen },
+  { href: '/professor/editais',    label: 'Meus Editais',  icon: ClipboardList },
+  { href: '/professor/inscricoes', label: 'Inscrições',    icon: Users },
+  { href: '/professor/relatorio',  label: 'Relatórios',    icon: BarChart3 },
 ];
 
 function NavLink({ item, onClick }: { item: NavItem; onClick?: () => void }) {
@@ -121,6 +123,17 @@ export function ProfessorShell({ children }: { children: React.ReactNode }) {
             </p>
             <p className="text-white/50 text-xs truncate">{user.email}</p>
           </div>
+        </Link>
+
+        {/* Voltar ao site público — o painel é uma área separada, e sem este
+            atalho não havia NENHUM caminho de volta para a home. */}
+        <Link
+          href="/"
+          onClick={onNavClick}
+          className="flex items-center gap-2 w-full px-3 py-2 mb-1 rounded-xl text-white/70 hover:bg-white/10 hover:text-white transition-all text-sm"
+        >
+          <ExternalLink className="w-4 h-4" />
+          Ver o portal
         </Link>
 
         <button

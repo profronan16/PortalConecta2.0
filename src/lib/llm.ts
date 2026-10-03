@@ -1,7 +1,26 @@
 /**
  * Camada de LLM desacoplada de provider — hoje usa DeepSeek (chave já configurada).
  * Trocar para Claude API no futuro é mudar só este arquivo; nenhum call site muda.
+ *
+ * ─── SOBRE O NOME DO MODELO ───────────────────────────────────────────────────
+ * Este arquivo é a FONTE ÚNICA do nome do modelo e do endpoint do DeepSeek.
+ * Antes, `'deepseek-chat'` estava repetido em 6 arquivos (aqui, em
+ * /api/chat, /api/ai/ifizinha, /api/admin/editais/extract-pdf, actions/tags e
+ * lib/rag-processor), então trocar de modelo exigia caçar strings pelo projeto
+ * inteiro — e esquecer uma significava um call site usando um modelo diferente.
+ *
+ * Os modelos oficiais hoje são `deepseek-flash` (V4.1-Flash) e
+ * `deepseek-v4-pro`. O nome `deepseek-chat` continua funcionando como ALIAS
+ * (verificado por chamada real à API: a resposta trouxe `model: "deepseek-flash"`),
+ * mas depender de um alias legado é risco desnecessário — se ele for aposentado,
+ * todo o chat para de funcionar sem aviso.
+ *
+ * Configure com `DEEPSEEK_MODEL` no .env para trocar sem tocar em código.
  */
+export const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
+
+/** Modelo oficial. `deepseek-chat` é alias legado; `deepseek-flash` é o nome atual. */
+export const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-flash';
 
 export interface LlmMessage {
   role: 'system' | 'user';
@@ -13,8 +32,6 @@ export interface LlmCompletionOptions {
   maxTokens?: number;
   jsonMode?: boolean;
 }
-
-const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
 
 export function isLlmConfigured(): boolean {
   return !!process.env.DEEPSEEK_API_KEY;
@@ -45,7 +62,7 @@ export async function generateCompletion(
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: 'deepseek-chat',
+          model: DEEPSEEK_MODEL,
           messages,
           temperature,
           max_tokens: maxTokens,
