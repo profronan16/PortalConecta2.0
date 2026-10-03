@@ -5,12 +5,20 @@
 -- contava com filtros próprios (rascunhos e registros com soft delete entravam em
 -- um lado e não no outro). A partir daqui os dois consomem esta view.
 --
--- Aplicar (Supabase SQL Editor ou psql):
+-- Aplicar COMO O USUÁRIO DA APLICAÇÃO (recomendado):
 --   psql "$DIRECT_URL" -f prisma/public-metrics-setup.sql
 --
+-- ⚠️ Se você rodar como superusuário (ex.: `sudo -u postgres psql`), a view e a
+-- função ficam pertencendo ao superusuário e a aplicação recebe
+-- "permission denied for materialized view public_metrics" — caindo no fallback
+-- de contagem ao vivo silenciosamente (foi exatamente o que aconteceu no deploy
+-- de 2026-10-03). Nesse caso, passe a posse para o usuário da aplicação:
+--   ALTER MATERIALIZED VIEW public_metrics OWNER TO <usuario_da_app>;
+--   ALTER FUNCTION refresh_public_metrics() OWNER TO <usuario_da_app>;
+--
 -- Depois de aplicar, `getPublicMetrics()` (src/lib/metrics.ts) passa a ler a view.
--- Se a view não existir, a aplicação cai automaticamente para contagem ao vivo e
--- loga um aviso — nenhum deploy quebra por ausência da view.
+-- Se a view não existir (ou não for legível), a aplicação cai automaticamente
+-- para contagem ao vivo e loga um aviso — nenhum deploy quebra por isso.
 -- ─────────────────────────────────────────────────────────────────────────────
 
 -- 1. View materializada com a linha única de métricas.
