@@ -1,13 +1,15 @@
 # ROADMAP — Portal Conecta IFPR
 
-**Status:** Em desenvolvimento conforme SPEC.md + DECISIONS.md
-**Última atualização:** 2026-09-16
+**Status:** ✅ Roadmap executado — 6 de 6 fases em 100%
+**Última atualização:** 2026-09-16 (execução completa do roadmap)
 **Deploy:** https://portal-conecta2-0.vercel.app
-**Base de código conferida em:** commit `f86208d` (16/09/2026)
+**Base de código:** partiu de `f86208d` (16/09/2026) e foi concluído em `1854f22`
 
 > Este documento foi reconciliado com o código real em 16/09/2026. A revisão anterior
 > (17/06/2026) marcava como pendentes várias entregas que já estavam em produção
 > (extração de PDF por IA, pipeline RAG, "Meus dados", e-mail pós-inscrição).
+> O restante das pendências foi implementado na sequência — ver
+> "Correções encontradas durante a cobertura de testes" e "Próximos passos" abaixo.
 
 ---
 
