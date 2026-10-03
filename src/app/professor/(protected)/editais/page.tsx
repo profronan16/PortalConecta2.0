@@ -164,7 +164,10 @@ export default function ProfessorEditaisPage() {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      fd.append('userEmail', user.email);
+      // O servidor NÃO confia em e-mail vindo do cliente: ele verifica este ID
+      // token do Firebase e deriva o e-mail/papel do token (ver
+      // src/app/api/files/upload/route.ts). O `user.email` daqui é só UX.
+      fd.append('idToken', await user.getIdToken());
       if (form.projetoId) fd.append('subpasta', form.projetoId);
 
       const res = await fetch('/api/files/upload', { method: 'POST', body: fd });
