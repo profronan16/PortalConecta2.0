@@ -11,6 +11,12 @@ import { listMyProjetos, updateMyProjeto, type MyProjetoFormData } from '@/actio
 import { getStatusLabel, getStatusColor, formatDateShort } from '@/lib/utils';
 import { FormularioExtraEditor } from '@/components/ui/FormularioExtraEditor';
 import { parsePerguntasExtra, type PerguntaExtra } from '@/lib/formulario-extra';
+import {
+  AVISO_CAMPOS_SUAP,
+  camposBloqueadosParaEdicao,
+  descreverCamposIgnorados,
+} from '@/lib/projetos-edicao';
+import { useToast } from '@/components/ui/toast';
 
 type Projeto = Awaited<ReturnType<typeof listMyProjetos>>[number];
 
@@ -18,6 +24,7 @@ const STATUS_LIST = ['ATIVO', 'EM_EXECUCAO', 'ENCERRADO', 'SUSPENSO', 'INSCRICOE
 
 export default function ProfessorProjetosPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [projetos, setProjetos] = useState<Projeto[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -73,11 +80,23 @@ export default function ProfessorProjetosPage() {
       if (result.ok) {
         setPanelOpen(false);
         load();
+        // O servidor ignora campos institucionais de projetos do SUAP (2.10).
+        const ignorados = result.data?.ignorados ?? [];
+        if (ignorados.length > 0) {
+          toast(
+            `Alterações salvas. Sem efeito (dados do SUAP): ${descreverCamposIgnorados(ignorados)}.`,
+            'info',
+          );
+        }
       } else {
         setError(result.error);
       }
     });
   };
+
+  // Campos institucionais bloqueados no projeto em edição (vazio se for manual).
+  const bloqueados = editing ? camposBloqueadosParaEdicao(editing) : [];
+  const estaBloqueado = (campo: string) => bloqueados.includes(campo as never);
 
   if (loading) {
     return (
@@ -194,23 +213,56 @@ export default function ProfessorProjetosPage() {
 
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
               <div className="p-6 space-y-4">
-                <Field label="Nome" required>
-                  <input className="input-field" value={form.nome} onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))} required />
+                {bloqueados.length > 0 && (
+                  <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-800 text-xs">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <span>
+                      {AVISO_CAMPOS_SUAP}
+                      <br />
+                      Você continua podendo editar descrição, cor, contatos, links e o formulário de inscrição.
+                    </span>
+                  </div>
+                )}
+
+                <Field label="Nome" required={!estaBloqueado('nome')}>
+                  <input
+                    className={`input-field ${estaBloqueado('nome') ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+                    value={form.nome}
+                    onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
+                    disabled={estaBloqueado('nome')}
+                    required={!estaBloqueado('nome')}
+                  />
                 </Field>
 
                 <div className="grid grid-cols-2 gap-4">
-                  <Field label="Área" required>
-                    <input className="input-field" value={form.area} onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))} required />
+                  <Field label="Área" required={!estaBloqueado('area')}>
+                    <input
+                      className={`input-field ${estaBloqueado('area') ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+                      value={form.area}
+                      onChange={(e) => setForm((f) => ({ ...f, area: e.target.value }))}
+                      disabled={estaBloqueado('area')}
+                      required={!estaBloqueado('area')}
+                    />
                   </Field>
-                  <Field label="Status" required>
-                    <select className="input-field" value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as MyProjetoFormData['status'] }))}>
+                  <Field label="Status" required={!estaBloqueado('status')}>
+                    <select
+                      className={`input-field ${estaBloqueado('status') ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+                      value={form.status}
+                      onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as MyProjetoFormData['status'] }))}
+                      disabled={estaBloqueado('status')}
+                    >
                       {STATUS_LIST.map((s) => <option key={s} value={s}>{getStatusLabel(s)}</option>)}
                     </select>
                   </Field>
                 </div>
 
                 <Field label="Coordenador">
-                  <input className="input-field" value={form.coordenador} onChange={(e) => setForm((f) => ({ ...f, coordenador: e.target.value }))} />
+                  <input
+                    className={`input-field ${estaBloqueado('coordenador') ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+                    value={form.coordenador}
+                    onChange={(e) => setForm((f) => ({ ...f, coordenador: e.target.value }))}
+                    disabled={estaBloqueado('coordenador')}
+                  />
                 </Field>
 
                 <Field label="Descrição">

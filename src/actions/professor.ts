@@ -8,6 +8,7 @@ import { sincronizarProjetoSintetico } from '@/lib/projeto-sintetico';
 import { sanitizeHtml } from '@/lib/rich-text';
 import type { PerguntaExtra } from '@/lib/formulario-extra';
 import { isAdministradorGeral, projetosAcessiveis, temAcessoAoProjeto, whereUsuarioTemAcessoAoProjeto } from '@/lib/permissions';
+import { camposBloqueadosParaEdicao, filtrarEdicaoProjeto } from '@/lib/projetos-edicao';
 import type { Prisma } from '@prisma/client';
 
 type ActionResult<T = void> = { ok: true; data?: T } | { ok: false; error: string };
@@ -98,7 +99,11 @@ export async function listInscricoes(projetoId: string, userEmail: string) {
 /**
  * Atualiza um projeto (apenas o coordenador/admin pode)
  */
-export async function updateMyProjeto(projetoId: string, data: MyProjetoFormData, userEmail?: string): Promise<ActionResult> {
+export async function updateMyProjeto(
+  projetoId: string,
+  data: MyProjetoFormData,
+  userEmail?: string,
+): Promise<ActionResult<{ ignorados: string[] }>> {
   try {
     // `userEmail` sempre checado — nunca opcional. Ver mesmo raciocínio em
     // updateInscricaoStatus: torná-lo opcional permitia pular a checagem só
@@ -108,26 +113,57 @@ export async function updateMyProjeto(projetoId: string, data: MyProjetoFormData
       return { ok: false, error: 'Acesso negado: você não é coordenador deste projeto' };
     }
 
-    await prisma.projeto.update({
+    const atual = await prisma.projeto.findUnique({
       where: { id: projetoId },
-      data: {
+      select: { suapId: true, source: true },
+    });
+    if (!atual) return { ok: false, error: 'Projeto não encontrado' };
+
+    // ROADMAP 2.10: em projeto vindo do SUAP, os campos institucionais são
+    // bloqueados no SERVIDOR (desabilitar o input na tela é só conveniência).
+    const bloqueados = camposBloqueadosParaEdicao(atual);
+    const { permitido, ignorados } = filtrarEdicaoProjeto(
+      {
         nome: data.nome,
-        slug: slugify(data.nome),
         coordenador: data.coordenador,
         area: data.area,
+        status: data.status,
         descricao: data.descricao || null,
-        status: data.status as any,
         corPrimaria: data.corPrimaria,
         email: data.email || null,
         instagram: data.instagram || null,
         site: data.site || null,
-        ...(data.formularioExtra !== undefined ? { formulario_extra: data.formularioExtra } : {}),
+        formularioExtra: data.formularioExtra,
       },
-    });
+      bloqueados,
+    );
+
+    const update: Prisma.ProjetoUpdateInput = {};
+    if (permitido.nome !== undefined) {
+      update.nome = permitido.nome as string;
+      update.slug = slugify(permitido.nome as string);
+    }
+    if (permitido.coordenador !== undefined) update.coordenador = permitido.coordenador as string;
+    if (permitido.area !== undefined) update.area = permitido.area as string;
+    if (permitido.status !== undefined) update.status = permitido.status as Prisma.ProjetoUpdateInput['status'];
+    if (permitido.descricao !== undefined) update.descricao = permitido.descricao as string | null;
+    if (permitido.corPrimaria !== undefined) update.corPrimaria = permitido.corPrimaria as string;
+    if (permitido.email !== undefined) update.email = permitido.email as string | null;
+    if (permitido.instagram !== undefined) update.instagram = permitido.instagram as string | null;
+    if (permitido.site !== undefined) update.site = permitido.site as string | null;
+    if (permitido.formularioExtra !== undefined) {
+      update.formulario_extra = permitido.formularioExtra as Prisma.InputJsonValue;
+    }
+
+    if (Object.keys(update).length === 0) {
+      return { ok: true, data: { ignorados } };
+    }
+
+    await prisma.projeto.update({ where: { id: projetoId }, data: update });
     cache.invalidate('chat:');
     await sincronizarProjetoSintetico(projetoId).catch(console.error);
 
-    return { ok: true };
+    return { ok: true, data: { ignorados } };
   } catch (e) {
     return { ok: false, error: translatePrismaError(e) };
   }

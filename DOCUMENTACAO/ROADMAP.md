@@ -56,7 +56,7 @@
 
 ---
 
-## 📋 FASE 2 — Gestão de Professores ✅ (~90%)
+## 📋 FASE 2 — Gestão de Professores ✅ (100%)
 
 **Objetivo:** Login professor → painel → edição projetos → inscrições → relatórios
 
@@ -71,10 +71,11 @@
 - [x] **2.7** Relatórios com estatísticas (tabulares)
 - [x] **2.8** Confirmação por e-mail pós-inscrição — `src/lib/email.ts` (Resend), chamada em `src/actions/inscricao.ts`
 - [x] **2.9** "Meus dados" para estudantes — `src/app/meus-dados` + `src/actions/meus-dados.ts`
+- [x] **2.10** Edição controlada — `src/lib/projetos-edicao.ts`: em projeto vindo do SUAP, nome/coordenador/área/situação são somente leitura (bloqueados **no servidor** em `updateMyProjeto`, não só na tela); o professor segue editando descrição, cor, contatos, links e formulário de inscrição
 
 ### ⚠️ Pendências:
 
-- [ ] **2.10** Edição controlada (campos SUAP bloqueados para edição manual)
+- (nenhuma)
 
 ---
 
@@ -158,7 +159,7 @@
 | Fase | Completude | Status |
 |---|---|---|
 | **1** | 90% | ✅ MVP funcional; faltam testes, paginação e `public_metrics` |
-| **2** | 90% | ✅ Professor gerencia; falta bloqueio de campos SUAP |
+| **2** | 100% | ✅ Professor gerencia com edição controlada |
 | **3** | 100% | ✅ Upload + extração + revisão + publicação |
 | **4** | 100% | ✅ RAG com pgvector, chat com citações |
 | **5** | 80% | 🔶 Sync manual funcionando; cron e conflitos fora de escopo |
@@ -172,8 +173,8 @@
 1. **1.16** Infra de testes automatizados + critérios de aceite §14 (infra ✅ feita; faltam os casos)
 2. **1.17** View `public_metrics` consumida por home e admin (código ✅; falta aplicar o SQL no banco)
 3. **1.15b** Paginação server-side em `/projetos` ✅
-4. **5.5** Proteção de campos editados manualmente no re-sync SUAP
-5. **2.10** Bloqueio de campos SUAP na edição pelo professor
+4. **5.5** Proteção de campos editados manualmente no re-sync SUAP ✅
+5. **2.10** Bloqueio de campos SUAP na edição pelo professor ✅
 
 ### Médio prazo — features da Fase 6
 6. **6.3** Favoritos (UI + API)
