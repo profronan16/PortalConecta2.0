@@ -1,6 +1,6 @@
 'use server';
 
-import { db } from '@/lib/prisma';
+import { getPublicMetrics } from '@/lib/metrics';
 
 // `syncUserProfileAction`/`getCurrentUserAction` removidas em 2026-08-26:
 // eram Server Actions sem checagem de autorização nenhuma (achados S18/S26
@@ -12,39 +12,21 @@ import { db } from '@/lib/prisma';
 // token via `verifySessionToken` (src/lib/auth-helpers.ts).
 
 /**
- * Retorna estatísticas do dashboard admin
- * (também usadas na home pública)
+ * Estatísticas exibidas na home pública.
+ *
+ * SPEC §5.1 / ROADMAP 1.17: home e dashboard admin leem a MESMA fonte
+ * (`getPublicMetrics` → view materializada `public_metrics`, com fallback de
+ * contagem ao vivo usando os mesmos filtros canônicos). Não reimplemente as
+ * contagens aqui — se os filtros mudarem, mude em `src/lib/metrics.ts`.
  */
 export async function getDashboardStatsAction() {
   try {
-    const [editaisAtivos, projetos, usuarios, eventos] = await Promise.all([
-      db.edital.count({
-        where: {
-          status: 'ABERTO',
-          review_status: 'PUBLICADO',
-          deleted_at: null,
-        },
-      }),
-      db.projeto.count({
-        where: {
-          status: { in: ['ATIVO', 'EM_EXECUCAO', 'INSCRICOES_ABERTAS'] },
-          review_status: 'PUBLICADO',
-          deleted_at: null,
-        },
-      }),
-      db.user.count(),
-      db.evento.count({
-        where: {
-          data: { gte: new Date() }, // Eventos futuros
-        },
-      }),
-    ]);
-
+    const metrics = await getPublicMetrics();
     return {
-      editaisAtivos,
-      projetos,
-      usuarios,
-      eventos,
+      editaisAtivos: metrics.editaisAtivos,
+      projetos: metrics.projetos,
+      usuarios: metrics.usuarios,
+      eventos: metrics.eventos,
     };
   } catch (error) {
     console.error('Erro ao buscar estatísticas:', error);
