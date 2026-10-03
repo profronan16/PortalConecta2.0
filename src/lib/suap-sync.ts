@@ -16,6 +16,7 @@ import {
   foiEditadoAposSync,
   mensagemPreservado,
 } from '@/lib/suap-edicao-manual';
+import { suapIdUnico } from '@/lib/suap-identidade';
 import {
   fetchProjetosFromSuap,
   fetchEditaisFromSuap,
@@ -131,13 +132,13 @@ export async function syncProjetos(options?: { dryRun?: boolean; forcar?: boolea
       const area = sp._fonte === 'pesquisa' ? 'Pesquisa' : 'Extensão';
 
       // ── Verificar se já existe pelo suapId ──
-      // IDs podem colidir entre pesquisa e extensão — prefixamos com a fonte
-      const suapIdUnico = sp._fonte === 'extensao'
-        ? sp.id * -1  // extensão usa ID negativo para não colidir com pesquisa
-        : sp.id;
+      // IDs podem colidir entre pesquisa e extensão — a chave única é derivada
+      // da fonte + id (ver src/lib/suap-identidade.ts) e é ela que garante a
+      // idempotência: rodar o sync duas vezes atualiza, não duplica.
+      const suapIdLocal = suapIdUnico(sp._fonte, sp.id);
 
       const existente = await prisma.projeto.findUnique({
-        where: { suapId: suapIdUnico },
+        where: { suapId: suapIdLocal },
       });
 
       const slug = existente
@@ -145,7 +146,7 @@ export async function syncProjetos(options?: { dryRun?: boolean; forcar?: boolea
         : await uniqueSlug(`${sp._fonte ?? 'projeto'}-${nome}`);
 
       const data = {
-        suapId: suapIdUnico,
+        suapId: suapIdLocal,
         suapSyncedAt: new Date(),
         nome,
         slug,
@@ -181,7 +182,7 @@ export async function syncProjetos(options?: { dryRun?: boolean; forcar?: boolea
         // Não seta review_status aqui: se um admin já revisou/despublicou
         // manualmente este projeto, um re-sync não deve sobrescrever essa
         // decisão silenciosamente.
-        await prisma.projeto.update({ where: { suapId: suapIdUnico }, data });
+        await prisma.projeto.update({ where: { suapId: suapIdLocal }, data });
         result.atualizados++;
         result.detalhes.push(`🔄 Atualizado: "${nome}" (SUAP ID: ${sp.id})`);
         await sincronizarProjetoSintetico(existente.id).catch(console.error);

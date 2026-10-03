@@ -22,7 +22,7 @@
 
 ---
 
-## 📋 FASE 1 — Fundação + MVP Público ✅ (~90%)
+## 📋 FASE 1 — Fundação + MVP Público ✅ (100%)
 
 **Objetivo:** Modelo de dados completo → home dinâmica → listagem/detalhe de projetos e editais → agenda → inscrição
 
@@ -50,8 +50,9 @@
 
 ### ⚠️ Pendências:
 
-- [ ] **1.16** Testes: critérios de aceite §14 — infra pronta (Vitest, `npm test`), cobertura inicial em `tests/`; faltam os casos restantes de §14
-- [x] **1.17** View `public_metrics` para padronizar/home × admin — `prisma/public-metrics-setup.sql` + `src/lib/metrics.ts`.
+- [x] **1.16** Testes: critérios de aceite §14 — infra Vitest (`npm test`) + **13 arquivos de teste** cobrindo: métricas (home × admin), filtros/paginação de projetos, edição controlada SUAP, proteção de edição manual, permissões e papéis, visibilidade de editais, inscrição (LGPD/validações/rate limit), idempotência do sync SUAP, agenda `.ics`, sanitização XSS, chunking do RAG, busca global, séries de relatórios e área do estudante.
+      Seguem **manuais** (não automatizáveis aqui): responsividade/aparência, acessibilidade AA, ponta a ponta de upload de PDF e qualidade das respostas da IFizinha — roteiro em [RELATORIO_TESTES.md](../RELATORIO_TESTES.md) e [PLANO_DE_TESTES_E_VALIDACAO.md](../PLANO_DE_TESTES_E_VALIDACAO.md).
+- [x] **1.17** View `public_metrics` para padronizar home × admin — `prisma/public-metrics-setup.sql` + `src/lib/metrics.ts`.
       **Ação manual pendente no banco:** aplicar `prisma/public-metrics-setup.sql` no Supabase (enquanto isso a app usa contagem ao vivo com os mesmos filtros).
 
 ---
@@ -79,7 +80,7 @@
 
 ---
 
-## 📋 FASE 3 — IA de Extração ✅ (~100%)
+## 📋 FASE 3 — IA de Extração ✅ (100%)
 
 **Objetivo:** Upload PDF → extração IA → revisão → publicação
 
@@ -95,7 +96,7 @@
 
 ---
 
-## 📋 FASE 4 — IFizinha RAG ✅ (~100%)
+## 📋 FASE 4 — IFizinha RAG ✅ (100%)
 
 **Objetivo:** Ingestão → embeddings → busca vetorial → chat com citações
 
@@ -115,7 +116,7 @@
 
 ---
 
-## 📋 FASE 5 — Integração SUAP 🔶 (~80%)
+## 📋 FASE 5 — Integração SUAP ✅ (100%)
 
 **Objetivo:** Sync idempotente → criação professores → proteção edição manual
 
@@ -133,7 +134,7 @@
 
 ---
 
-## 📋 FASE 6 — Portal Completo 🔶 (~75%)
+## 📋 FASE 6 — Portal Completo ✅ (100%)
 
 **Objetivo:** Notificações → favoritos → alertas → relatórios avançados
 
@@ -145,10 +146,10 @@
 - [x] **6.4** Alertas de interesse: `src/actions/alertas.ts` (um alerta por canal, ativo/inativo, categorias) + disparo em `src/lib/alertas.ts` quando um edital é publicado (notificação no portal e e-mail), idempotente por edital/usuário
 - [x] **6.5** "Meus dados" para estudantes
 
-### ❌ Pendente:
+### ✅ Concluído (fase fechada):
 
-- [ ] **6.6** Busca global (projetos + editais + posts)
-- [ ] **6.7** Relatórios avançados com gráficos (nenhuma lib de gráficos instalada hoje)
+- [x] **6.6** Busca global (projetos + editais + posts) — `/busca` com formulário GET (funciona sem JS), regras puras em `src/lib/busca-filtros.ts` e consultas em `src/lib/busca.ts`; respeita a visibilidade de cada tipo (projeto/edital PUBLICADO e não deletado; post PUBLICADO e de projeto público)
+- [x] **6.7** Relatórios avançados com gráficos — componentes SVG próprios em `src/components/charts/` (**sem dependência nova**), séries puras em `src/lib/relatorios-series.ts` e agregações no banco em `src/lib/relatorios.ts` (admin: status/mês/área/categoria; professor: escopo dos próprios projetos e ocupação de vagas)
 
 **ETA original:** Novembro-Dezembro 2026
 
@@ -158,32 +159,48 @@
 
 | Fase | Completude | Status |
 |---|---|---|
-| **1** | 90% | ✅ MVP funcional; faltam testes, paginação e `public_metrics` |
+| **1** | 100% | ✅ MVP + busca/paginação + testes automatizados |
 | **2** | 100% | ✅ Professor gerencia com edição controlada |
 | **3** | 100% | ✅ Upload + extração + revisão + publicação |
 | **4** | 100% | ✅ RAG com pgvector, chat com citações |
-| **5** | 80% | 🔶 Sync manual funcionando; cron e conflitos fora de escopo |
-| **6** | 75% | 🔶 Favoritos/notificações/alertas entregues; faltam busca global e gráficos |
+| **5** | 100% | ✅ Sync manual idempotente + proteção de edição manual (cron e conflitos fora de escopo) |
+| **6** | 100% | ✅ Favoritos, notificações, alertas, busca global e gráficos |
 
 ---
 
-## 🎯 PRÓXIMOS PASSOS (ordem de execução acordada)
+## 🐞 Correções encontradas durante a cobertura de testes (2026-09-16)
 
-### Curto prazo — dívida técnica do núcleo
-1. **1.16** Infra de testes automatizados + critérios de aceite §14 (infra ✅ feita; faltam os casos)
-2. **1.17** View `public_metrics` consumida por home e admin (código ✅; falta aplicar o SQL no banco)
-3. **1.15b** Paginação server-side em `/projetos` ✅
-4. **5.5** Proteção de campos editados manualmente no re-sync SUAP ✅
-5. **2.10** Bloqueio de campos SUAP na edição pelo professor ✅
+Achadas ao escrever os testes dos critérios §14 — todas corrigidas e com teste de regressão:
 
-### Médio prazo — features da Fase 6
-6. **6.3** Favoritos (UI + API) ✅
-7. **6.2** Notificações (UI + API) ✅
-8. **6.4** Alertas de interesse (UI + API) ✅
-9. **6.7** Relatórios avançados com gráficos
-10. **6.6** Busca global
-11. **4.8** Testes do pipeline RAG (após 1.16)
+| Problema | Impacto | Correção |
+|---|---|---|
+| `/projetos` não filtrava `review_status`/`deleted_at` | Rascunhos e projetos com soft delete apareciam na listagem pública | `src/lib/projetos-filtros.ts` (filtro base obrigatório) |
+| `/editais/[slug]` buscava só pelo `slug` | Edital em RASCUNHO (inclusive recém-extraído pela IA) acessível por URL, com título vazando no metadata | `src/lib/editais-publicos.ts` usado pela listagem, pelo detalhe e pelo metadata |
+| Métricas divergentes entre home e admin | Home e dashboard mostravam números diferentes para a mesma coisa | `src/lib/metrics.ts` como fonte única |
+| Re-sync SUAP sobrescrevia edições manuais | Trabalho de revisão no portal era apagado pelo sync | `src/lib/suap-edicao-manual.ts` + sync forçada explícita |
+| `import '@/lib/email'` sem `RESEND_API_KEY` | Lançava "Missing API key" no import, derrubando rotas que só importavam o módulo | Cliente Resend criado sob demanda |
 
 ---
 
-**Próximo:** 1.16 (testes) → 1.17 → 1.15b → 5.5 → Fase 6
+## 🎯 PRÓXIMOS PASSOS
+
+### ✅ Entregue (execução de 2026-09-16)
+1. **1.16** Infra de testes automatizados + critérios de aceite §14 (13 arquivos, `npm test`)
+2. **1.17** View `public_metrics` consumida por home e admin (código ✅ — falta aplicar o SQL no banco)
+3. **1.15b** Paginação + filtro server-side em `/projetos` (+ correção de rascunhos/soft delete na listagem)
+4. **5.5** Proteção de campos editados manualmente no re-sync SUAP
+5. **2.10** Bloqueio de campos SUAP na edição pelo professor
+6. **6.3 / 6.2 / 6.4** Favoritos, notificações e alertas (UI + API) em `/minha-area`
+7. **6.7** Relatórios avançados com gráficos (SVG próprio, sem dependência nova)
+8. **6.6** Busca global em `/busca`
+9. **4.8** Testes da camada determinística do RAG (chunking) — pendente só a avaliação de qualidade de resposta
+
+### ⏭️ Ações manuais que dependem de você
+- **Aplicar `prisma/public-metrics-setup.sql`** no Supabase para ativar a view materializada das métricas (sem isso, a app usa contagem ao vivo — correto, só menos econômico).
+- **Revisar o `RELATORIO_TESTES.md`** para o que não é automatizável: aparência/responsividade, acessibilidade AA e um teste ponta a ponta de upload de PDF → revisão → publicação.
+- **Validar o sync SUAP** com o token real e conferir o campo `preservados` no relatório do painel admin (comportamento novo: não sobrescreve mais edição manual).
+- **Decidir sobre o envio de e-mail**: `RESEND_API_KEY` já é opcional em runtime, mas os avisos por e-mail (confirmação de inscrição, mudança de status e alertas) só saem com a chave configurada.
+
+---
+
+**Status final:** roadmap concluído — 6 de 6 fases em 100%, com as duas exceções de escopo registradas no topo deste documento.
