@@ -257,6 +257,28 @@ model Edital {
 
 ---
 
+## 11. Sync SUAP: manual, sem cron e sem tratamento de conflitos
+
+**Contexto:**
+→ O ROADMAP previa **5.4** sync agendada (cron) e **5.6** tratamento de conflitos de sincronização.
+
+**Decisão (2026-09-16):**
+→ **Remover os dois itens do escopo.**
+
+**Justificativa:**
+- A sync agendada depende de informações/credenciais que só o responsável possui e não devem ser automatizadas sem supervisão.
+- No fluxo adotado (sync manual, disparada pelo admin e revisada em seguida), não existe cenário legítimo de conflito automático — o tratamento de conflitos resolveria um problema que não ocorre.
+
+**Implementação:**
+- Sync permanece **manual**, via `/api/suap/sync/projetos`, `/api/suap/sync/editais` e botões em `SyncButtons`.
+- O único cron do projeto continua sendo `/api/cron/keep-db-alive` (evita pause do Supabase por inatividade).
+- Permanece no escopo apenas **5.5** (proteção de edição manual: re-sync não deve sobrescrever campos editados no admin).
+
+**Registrado em:** DECISIONS.md + DOCUMENTACAO/ROADMAP.md
+**Impacto:** Fase 5 do roadmap
+
+---
+
 ## Resumo de impactos
 
 | Decisão | Impacto | Fase | Notas |
@@ -269,6 +291,7 @@ model Edital {
 | Fila manual | Pode estar lenta; MVP ok | 1+ | Escalar se necessário |
 | TODO calendário oficial | Dados de exemplo até então | 1 | Não bloqueia MVP |
 | Tabelas ausentes (tags, faq, favoritos) | MVP sem features avançadas | 2+ | Adicionar incrementalmente |
+| Sync SUAP manual (sem cron, sem conflitos) | Menos automação; exige ação do admin | 5 | Depende de credenciais do responsável; ver §11 |
 
 ---
 
