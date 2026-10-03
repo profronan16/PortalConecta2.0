@@ -128,7 +128,7 @@
 
 ### ⚠️ Pendências:
 
-- [ ] **5.5** Proteção de edição manual: hoje o re-sync preserva `review_status`, mas ainda sobrescreve campos de texto editados no admin. Falta marcar/ignorar campos editados manualmente (`suapSyncedAt` × `updatedAt`).
+- [x] **5.5** Proteção de edição manual — `src/lib/suap-edicao-manual.ts`: o sync detecta registros alterados no portal depois do último sync (`updatedAt` × `suapSyncedAt`), **não** os sobrescreve, reporta em `preservados` e oferece a "Sync forçada" no painel admin como válvula de escape.
 
 ---
 

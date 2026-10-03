@@ -25,9 +25,11 @@ export async function POST(req: NextRequest) {
   }
 
   let dryRun = false;
+  let forcar = false;
   try {
     const body = await req.json().catch(() => ({}));
     dryRun = body.dryRun === true;
+    forcar = body.forcar === true;
   } catch {
     //
   }
@@ -35,10 +37,11 @@ export async function POST(req: NextRequest) {
   const startedAt = Date.now();
 
   try {
-    const result = await syncEditais({ dryRun });
+    const result = await syncEditais({ dryRun, forcar });
     return NextResponse.json({
       ok: true,
       dryRun,
+      forcar,
       duracao: `${((Date.now() - startedAt) / 1000).toFixed(1)}s`,
       ...result,
     });

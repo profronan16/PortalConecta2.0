@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useTransition } from 'react';
 import {
-  RefreshCw, CheckCircle2, AlertCircle, Clock, FolderOpen,
+  RefreshCw, CheckCircle2, AlertCircle, AlertTriangle, Clock, FolderOpen,
   FileText, Zap, Database, Settings, ExternalLink, ChevronDown,
   ChevronUp, Play, Search, Wifi, WifiOff,
 } from 'lucide-react';
@@ -20,6 +20,8 @@ interface SyncResult {
   total: number;
   criados: number;
   atualizados: number;
+  /** Registros editados manualmente no portal que o sync NÃO sobrescreveu. */
+  preservados?: number;
   erros: number;
   detalhes: string[];
   dadosBrutos?: unknown;
@@ -105,18 +107,27 @@ export default function SuapSyncPage() {
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
-  const handleSync = async (type: SyncType) => {
+  const handleSync = async (type: SyncType, forcar = false) => {
     if (!user?.email) return;
     setSyncing(type);
     setLastResult(null);
     try {
       const action = type === 'projetos' ? syncProjetosAction : syncEditaisAction;
-      const result = await action(false, user.email);
+      const result = await action(false, user.email, forcar);
       setLastResult({ type, result: { ...result, ok: result.erros === 0 } as SyncResult });
       await fetchStatus();
     } finally {
       setSyncing(null);
     }
+  };
+
+  /** Sync forçada: sobrescreve também registros editados manualmente no portal. */
+  const handleSyncForcada = async (type: SyncType) => {
+    const confirmado = window.confirm(
+      'Sync forçada: os registros editados manualmente no portal serão SOBRESCRITOS com os dados do SUAP. Continuar?',
+    );
+    if (!confirmado) return;
+    await handleSync(type, true);
   };
 
   const handleDryRun = async (type: SyncType) => {
@@ -423,6 +434,7 @@ export default function SuapSyncPage() {
           loading={syncing === 'projetos'}
           onSync={() => handleSync('projetos')}
           onDryRun={() => handleDryRun('projetos')}
+          onForce={() => handleSyncForcada('projetos')}
           lastLog={logs.find((l) => l.tipo === 'projetos')}
         />
 
@@ -436,6 +448,7 @@ export default function SuapSyncPage() {
           loading={syncing === 'editais'}
           onSync={() => handleSync('editais')}
           onDryRun={() => handleDryRun('editais')}
+          onForce={() => handleSyncForcada('editais')}
           lastLog={logs.find((l) => l.tipo === 'editais')}
         />
       </div>
@@ -471,6 +484,14 @@ export default function SuapSyncPage() {
             <span className="text-gray-600">Total SUAP: <strong>{lastResult.result.total}</strong></span>
             <span className="text-green-700">Criados: <strong>{lastResult.result.criados}</strong></span>
             <span className="text-blue-700">Atualizados: <strong>{lastResult.result.atualizados}</strong></span>
+            {!!lastResult.result.preservados && (
+              <span
+                className="text-amber-700"
+                title="Editados manualmente no portal depois do último sync — não foram sobrescritos"
+              >
+                Preservados (edição manual): <strong>{lastResult.result.preservados}</strong>
+              </span>
+            )}
             {lastResult.result.erros > 0 && (
               <span className="text-red-700">Erros: <strong>{lastResult.result.erros}</strong></span>
             )}
@@ -571,12 +592,12 @@ export default function SuapSyncPage() {
 
 function SyncCard({
   title, description, icon: Icon, color, disabled, loading,
-  onSync, onDryRun, lastLog,
+  onSync, onDryRun, onForce, lastLog,
 }: {
   title: string; description: string;
   icon: React.ElementType; color: 'azul' | 'roxo';
   disabled: boolean; loading: boolean;
-  onSync: () => void; onDryRun: () => void;
+  onSync: () => void; onDryRun: () => void; onForce?: () => void;
   lastLog?: { createdAt: string; status: string; sincronizados: number };
 }) {
   const colorMap = {
@@ -630,6 +651,20 @@ function SyncCard({
           Testar
         </button>
       </div>
+
+      {/* Sync forçada: por padrão o sync NÃO sobrescreve registros editados
+          manualmente no portal (ROADMAP 5.5). Este botão é a válvula de escape. */}
+      {onForce && (
+        <button
+          onClick={onForce}
+          disabled={disabled || loading}
+          title="Sobrescreve também os registros editados manualmente no portal"
+          className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs border border-amber-200 text-amber-700 hover:bg-amber-50 transition-colors disabled:opacity-50"
+        >
+          <AlertTriangle className="w-3.5 h-3.5" />
+          Sync forçada (sobrescrever edições manuais)
+        </button>
+      )}
       {disabled && (
         <p className="text-xs text-red-500 mt-2 flex items-center gap-1">
           <AlertCircle className="w-3 h-3" />

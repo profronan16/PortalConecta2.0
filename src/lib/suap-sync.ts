@@ -12,6 +12,11 @@ import { prisma } from '@/lib/prisma';
 import { cache } from '@/lib/cache';
 import { sincronizarProjetoSintetico } from '@/lib/projeto-sintetico';
 import {
+  decidirAtualizacaoSync,
+  foiEditadoAposSync,
+  mensagemPreservado,
+} from '@/lib/suap-edicao-manual';
+import {
   fetchProjetosFromSuap,
   fetchEditaisFromSuap,
   mapStatusProjeto,
@@ -81,13 +86,18 @@ export interface SyncResult {
   total: number;
   criados: number;
   atualizados: number;
+  /**
+   * Registros que JÁ existem no portal mas foram editados manualmente depois do
+   * último sync e por isso NÃO foram sobrescritos (ROADMAP 5.5).
+   */
+  preservados: number;
   erros: number;
   detalhes: string[];
   dadosBrutos?: unknown; // raw SUAP response para debug
 }
 
-export async function syncProjetos(options?: { dryRun?: boolean }): Promise<SyncResult> {
-  const result: SyncResult = { total: 0, criados: 0, atualizados: 0, erros: 0, detalhes: [] };
+export async function syncProjetos(options?: { dryRun?: boolean; forcar?: boolean }): Promise<SyncResult> {
+  const result: SyncResult = { total: 0, criados: 0, atualizados: 0, preservados: 0, erros: 0, detalhes: [] };
 
   let projetosSuap: SuapProjeto[] = [];
 
@@ -155,6 +165,19 @@ export async function syncProjetos(options?: { dryRun?: boolean }): Promise<Sync
       };
 
       if (existente) {
+        // ROADMAP 5.5: se o registro foi editado no portal depois do último
+        // sync, não sobrescrevemos — o relatório avisa e o admin decide se
+        // dispara uma sync forçada. `suapSyncedAt` de propósito NÃO é
+        // atualizado nesse caminho: se fosse, a edição manual deixaria de ser
+        // detectável no próximo sync e o dado seria perdido depois.
+        const editadoManualmente = foiEditadoAposSync(existente);
+
+        if (decidirAtualizacaoSync({ editadoManualmente, forcar: options?.forcar }) === 'preservar') {
+          result.preservados++;
+          result.detalhes.push(mensagemPreservado(existente.nome, sp.id));
+          continue;
+        }
+
         // Não seta review_status aqui: se um admin já revisou/despublicou
         // manualmente este projeto, um re-sync não deve sobrescrever essa
         // decisão silenciosamente.
@@ -186,7 +209,7 @@ export async function syncProjetos(options?: { dryRun?: boolean }): Promise<Sync
 
 // ─── Sync Editais ──────────────────────────────────────────────────────────────
 
-export async function syncEditais(options?: { dryRun?: boolean }): Promise<SyncResult> {
+export async function syncEditais(options?: { dryRun?: boolean; forcar?: boolean }): Promise<SyncResult> {
   // Buscar admin padrão para ser author dos editais
   const adminUser = await prisma.user.findFirst({
     where: { role: 'ADMIN' },
@@ -198,12 +221,13 @@ export async function syncEditais(options?: { dryRun?: boolean }): Promise<SyncR
       total: 0,
       criados: 0,
       atualizados: 0,
+      preservados: 0,
       erros: 1,
       detalhes: ['❌ Nenhum usuário admin encontrado. Execute o seed primeiro.'],
     };
   }
 
-  const result: SyncResult = { total: 0, criados: 0, atualizados: 0, erros: 0, detalhes: [] };
+  const result: SyncResult = { total: 0, criados: 0, atualizados: 0, preservados: 0, erros: 0, detalhes: [] };
 
   let editaisSuap: SuapEdital[] = [];
 
@@ -301,6 +325,16 @@ export async function syncEditais(options?: { dryRun?: boolean }): Promise<SyncR
       };
 
       if (existente) {
+        // Mesma proteção dos projetos (ROADMAP 5.5): edital ajustado no portal
+        // não é sobrescrito pelo sync sem uma sync forçada explícita.
+        const editadoManualmente = foiEditadoAposSync(existente);
+
+        if (decidirAtualizacaoSync({ editadoManualmente, forcar: options?.forcar }) === 'preservar') {
+          result.preservados++;
+          result.detalhes.push(mensagemPreservado(existente.titulo, se.id));
+          continue;
+        }
+
         // Não seta review_status aqui — preserva decisão manual de moderação
         // já feita por um admin (mesmo raciocínio de syncProjetos).
         await prisma.edital.update({ where: { suapId: se.id }, data });

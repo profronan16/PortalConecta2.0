@@ -18,35 +18,35 @@ import { isAdministradorGeral } from '@/lib/permissions';
 // autorização — a página só escondia o botão na UI para quem não era master,
 // mas a Server Action em si podia ser chamada diretamente por qualquer um).
 
-export async function syncProjetosAction(dryRun = false, callerEmail?: string) {
+export async function syncProjetosAction(dryRun = false, callerEmail?: string, forcar = false) {
   if (!callerEmail || !isAdministradorGeral(callerEmail)) {
     return {
-      total: 0, criados: 0, atualizados: 0, erros: 1,
+      total: 0, criados: 0, atualizados: 0, preservados: 0, erros: 1,
       detalhes: ['❌ Acesso negado: apenas o Administrador Geral pode sincronizar com o SUAP'],
     };
   }
   try {
-    return await syncProjetos({ dryRun });
+    return await syncProjetos({ dryRun, forcar });
   } catch (err) {
     return {
-      total: 0, criados: 0, atualizados: 0, erros: 1,
+      total: 0, criados: 0, atualizados: 0, preservados: 0, erros: 1,
       detalhes: [`❌ ${err instanceof Error ? err.message : String(err)}`],
     };
   }
 }
 
-export async function syncEditaisAction(dryRun = false, callerEmail?: string) {
+export async function syncEditaisAction(dryRun = false, callerEmail?: string, forcar = false) {
   if (!callerEmail || !isAdministradorGeral(callerEmail)) {
     return {
-      total: 0, criados: 0, atualizados: 0, erros: 1,
+      total: 0, criados: 0, atualizados: 0, preservados: 0, erros: 1,
       detalhes: ['❌ Acesso negado: apenas o Administrador Geral pode sincronizar com o SUAP'],
     };
   }
   try {
-    return await syncEditais({ dryRun });
+    return await syncEditais({ dryRun, forcar });
   } catch (err) {
     return {
-      total: 0, criados: 0, atualizados: 0, erros: 1,
+      total: 0, criados: 0, atualizados: 0, preservados: 0, erros: 1,
       detalhes: [`❌ ${err instanceof Error ? err.message : String(err)}`],
     };
   }

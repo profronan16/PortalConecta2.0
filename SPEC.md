@@ -970,7 +970,12 @@ WHATSAPP_ENABLED=false           # alertas por WhatsApp são opt-in/condicionais
 
 **SUAP**
 - [ ] Sync é idempotente (rodar 2x não duplica).
-- [ ] Edição manual não é sobrescrita sem registro de conflito.
+- [ ] Edição manual não é sobrescrita pelo sync (a sync forçada é a válvula de escape explícita).
+
+> **Revisão 2026-09-16:** "sync agendada" e "tratamento de conflitos" saíram do
+> escopo por decisão do responsável (ver `DECISIONS.md` §11) — a sync é manual e
+> conflito automático não é cenário legítimo neste fluxo. Permanece apenas a
+> proteção de edição manual acima.
 
 ---
 
@@ -1017,7 +1022,7 @@ Upload de PDF → `pdf-extract` → extração estruturada (§7) → tela de rev
 Ingestão + embeddings → `rag-query` com filtro de permissão → `ifizinha-chat` com guardrails e citações → modos público/autenticado/por-página → log de conversas.
 
 **Fase 5 — Integração SUAP**
-Cliente desacoplado → importação idempotente → criação/vínculo de professores → sync manual e agendada → tratamento de conflitos.
+Cliente desacoplado → importação idempotente → criação/vínculo de professores → sync manual (agendada e conflitos fora do escopo — `DECISIONS.md` §11) → proteção de edição manual.
 
 **Fase 6 — Portal completo**
 Notificações internas → favoritos → alertas personalizados → relatórios avançados → modo urgente → integração com calendários externos → busca global → páginas "Como participar", FAQ geral, contatos por setor, página pública por coordenador, transparência da IA.
