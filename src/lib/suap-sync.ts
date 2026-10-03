@@ -1,5 +1,5 @@
 /**
- * SUAP Sync — mapeia dados da API SUAP para o banco local (Prisma/Supabase)
+ * SUAP Sync — mapeia dados da API SUAP para o banco local (Prisma/PostgreSQL)
  *
  * Fluxo:
  *  1. Busca dados da API SUAP (suap-api.ts)
