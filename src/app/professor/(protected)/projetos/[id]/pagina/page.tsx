@@ -12,6 +12,8 @@ import {
   type PaginaProjetoFormData,
 } from '@/actions/professor';
 import { CampoMidiaProjeto } from '@/components/ui/CampoMidiaProjeto';
+import { EquipeEFinanciamentoDoProjeto } from '@/components/projetos/EquipeEFinanciamentoDoProjeto';
+import type { EquipeDoProjeto } from '@/lib/projetos-equipe';
 import { useToast } from '@/components/ui/toast';
 
 /**
@@ -39,7 +41,13 @@ export default function PaginaDoProjetoPage({ params }: { params: { id: string }
     email: '',
     instagram: '',
     site: '',
+    financiamento: [],
+    viceCoordenadorNome: '',
+    viceCoordenadorEmail: '',
   });
+  // Estudantes do projeto (das inscrições) e se este usuário pode mudar o vice.
+  const [equipe, setEquipe] = useState<EquipeDoProjeto | null>(null);
+  const [podeEditarVice, setPodeEditarVice] = useState(false);
 
   const somenteGestor = userRole === 'ESTUDANTE';
 
@@ -62,7 +70,12 @@ export default function PaginaDoProjetoPage({ params }: { params: { id: string }
           email: p.email ?? '',
           instagram: p.instagram ?? '',
           site: p.site ?? '',
+          financiamento: p.financiamento ?? [],
+          viceCoordenadorNome: p.viceCoordenadorNome ?? '',
+          viceCoordenadorEmail: p.viceCoordenadorEmail ?? '',
         });
+        setEquipe(p.equipe);
+        setPodeEditarVice(p.podeEditarVice);
       })
       .catch(() => setErro('Não conseguimos carregar esta página. Tente novamente.'))
       .finally(() => setCarregando(false));
@@ -231,6 +244,16 @@ export default function PaginaDoProjetoPage({ params }: { params: { id: string }
               placeholder="https://..."
             />
           </div>
+        </div>
+
+        {/* Mesmo bloco do painel "Editar Projeto": vice, estudantes e financiamento. */}
+        <div className="space-y-4 pt-2">
+          <EquipeEFinanciamentoDoProjeto
+            valores={form}
+            onChange={(alteracao) => setForm((atual) => ({ ...atual, ...alteracao }))}
+            equipe={equipe}
+            podeEditarVice={podeEditarVice}
+          />
         </div>
 
         <div className="flex justify-end pt-2">

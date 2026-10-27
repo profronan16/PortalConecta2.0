@@ -7,8 +7,8 @@ import { Plus, X } from 'lucide-react';
  * Editor de lista curta de nomes/rótulos: digita e adiciona (Enter, vírgula ou
  * o botão), cada item vira um chip removível.
  *
- * Usado na equipe de estudantes (bolsistas/voluntários) e no financiamento do
- * projeto, no formulário do professor e no do admin. Duas razões para ser chip
+ * Usado no financiamento do projeto (bloco `EquipeEFinanciamentoDoProjeto`).
+ * Duas razões para ser chip
  * e não textarea: o mesmo nome não entra duas vezes (o servidor também
  * deduplica) e a página pública renderiza exatamente esses itens — sem
  * regravar texto com quebra de linha para depois adivinhar a lista.

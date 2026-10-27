@@ -3,7 +3,8 @@
 import React, { useEffect, useState, useTransition, useMemo } from 'react';
 import { Plus, Pencil, Trash2, X, FolderOpen, AlertCircle, ExternalLink, Newspaper, Search, Eye, EyeOff, UserCheck, UserX, Loader2 } from 'lucide-react';
 import { listProjetos, createProjeto, updateProjeto, deleteProjeto, toggleProjetoPublicacao, type ProjetoFormData } from '@/actions/admin';
-import { toggleInscricoes, abrirInscricoes } from '@/actions/professor';
+import { toggleInscricoes, abrirInscricoes, getEquipeDoProjeto } from '@/actions/professor';
+import type { EquipeDoProjeto } from '@/lib/projetos-equipe';
 import { AbrirInscricoesModal } from '@/components/ui/AbrirInscricoesModal';
 import { FormularioExtraEditor } from '@/components/ui/FormularioExtraEditor';
 import { LogoDoProjeto } from '@/components/projetos/LogoDoProjeto';
@@ -23,7 +24,7 @@ const TIPO_LIST = ['Pesquisa', 'Extensão'];
 const EMPTY_FORM: ProjetoFormData = {
   nome: '', coordenador: '', coordenadorEmail: '', viceCoordenadorNome: '', viceCoordenadorEmail: '', area: '', descricao: '', resumoCurto: '',
   dataInicio: '', servidores: '', alunos: '', observacao: '',
-  estudantesBolsistas: [], estudantesVoluntarios: [], financiamento: [],
+  financiamento: [],
   status: 'EM_EXECUCAO', logoUrl: '', bannerUrl: '', corPrimaria: '#2F52D3',
   email: '', instagram: '', site: '', destaque: false, adminEmails: '', formularioExtra: [],
 };
@@ -86,8 +87,6 @@ export default function AdminProjetosPage() {
       dataInicio: projeto.dataInicio ? new Date(projeto.dataInicio).toISOString().split('T')[0] : '',
       servidores: projeto.servidores ?? '',
       alunos: projeto.alunos ?? '',
-      estudantesBolsistas: projeto.estudantesBolsistas ?? [],
-      estudantesVoluntarios: projeto.estudantesVoluntarios ?? [],
       financiamento: projeto.financiamento ?? [],
       observacao: projeto.observacao ?? '',
       status: projeto.status,
@@ -189,6 +188,18 @@ export default function AdminProjetosPage() {
 
   const set = (field: keyof ProjetoFormData, value: unknown) =>
     setForm((f) => ({ ...f, [field]: value }));
+
+  // Estudantes do projeto = inscrições selecionadas que aceitaram a convocação.
+  const [equipe, setEquipe] = useState<EquipeDoProjeto | null>(null);
+  useEffect(() => {
+    if (!panelOpen || !editing || !user?.email) return;
+    let cancelado = false;
+    setEquipe(null);
+    getEquipeDoProjeto(editing.id, user.email)
+      .then((e) => { if (!cancelado) setEquipe(e ?? { bolsistas: [], voluntarios: [], total: 0 }); })
+      .catch(console.error);
+    return () => { cancelado = true; };
+  }, [panelOpen, editing, user]);
 
   const isMaster = userRole === 'ADMIN' || isMasterAdmin;
 
@@ -471,14 +482,6 @@ export default function AdminProjetosPage() {
                         <p className="text-xs text-gray-400 mt-1">Precisa ser @ifpr.edu.br para o coordenador acessar o Painel do Professor deste projeto.</p>
                       </div>
                       <div>
-                        <label className="label-field">Vice-coordenador (nome)</label>
-                        <input className="input-field disabled:opacity-50 disabled:bg-gray-50" value={form.viceCoordenadorNome ?? ''} onChange={(e) => set('viceCoordenadorNome', e.target.value)} disabled={!isMaster} />
-                      </div>
-                      <div>
-                        <label className="label-field">Vice-coordenador (e-mail)</label>
-                        <input type="email" className="input-field disabled:opacity-50 disabled:bg-gray-50" placeholder="vice@ifpr.edu.br" value={form.viceCoordenadorEmail ?? ''} onChange={(e) => set('viceCoordenadorEmail', e.target.value)} disabled={!isMaster} />
-                      </div>
-                      <div>
                         <label className="label-field">Área <span className="text-red-500">*</span></label>
                         <input className="input-field disabled:opacity-50 disabled:bg-gray-50" value={form.area} onChange={(e) => set('area', e.target.value)} required disabled={!isMaster} />
                       </div>
@@ -506,12 +509,11 @@ export default function AdminProjetosPage() {
                     />
                   </div>
 
-                  {/* Equipe do Projeto — servidores em texto livre. Os
-                      estudantes (bolsistas/voluntários) e o financiamento
-                      ficam logo abaixo, nos campos que a página pública
-                      exibe junto ao resumo. */}
+                  {/* Servidores em texto livre. Vice-coordenação, estudantes
+                      (das inscrições) e financiamento ficam logo abaixo, no
+                      bloco que as outras telas de edição também usam. */}
                   <div className="col-span-2 space-y-4 mt-2">
-                    <h3 className="text-sm font-bold text-gray-900 border-b pb-2">Equipe do Projeto</h3>
+                    <h3 className="text-sm font-bold text-gray-900 border-b pb-2">Servidores do Projeto</h3>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="col-span-2">
                         <label className="label-field">Servidores</label>
@@ -520,11 +522,13 @@ export default function AdminProjetosPage() {
                     </div>
                   </div>
 
-                  {/* Estudantes e financiamento — mesmo componente usado no painel do professor */}
+                  {/* Vice, estudantes e financiamento — mesmo bloco das telas do professor */}
                   <div className="col-span-2 space-y-4 mt-2">
                     <EquipeEFinanciamentoDoProjeto
                       valores={form}
-                      onChange={(campo, valor) => set(campo, valor)}
+                      onChange={(alteracao) => setForm((f) => ({ ...f, ...alteracao }))}
+                      equipe={editing ? equipe : undefined}
+                      podeEditarVice={isMaster}
                     />
                   </div>
 

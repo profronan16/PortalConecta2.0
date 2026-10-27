@@ -6,7 +6,8 @@ import {
   BookOpen, Calendar, ArrowRight, HelpCircle, GraduationCap, Landmark,
 } from 'lucide-react';
 import { getStatusLabel, getStatusColor, formatDate } from '@/lib/utils';
-import { equipeDoProjeto, financiamentoDoProjeto } from '@/lib/projetos-equipe';
+import { financiamentoDoProjeto } from '@/lib/projetos-equipe';
+import { buscarEquipeDoProjeto } from '@/lib/projetos-equipe-db';
 import { stripHtml } from '@/lib/rich-text';
 import { SafeHtml } from '@/components/ui/SafeHtml';
 import { BotaoFavorito } from '@/components/ui/BotaoFavorito';
@@ -70,9 +71,10 @@ export default async function ProjetoPage({ params }: { params: Params }) {
 
   if (!projeto) notFound();
 
-  // Equipe de estudantes e financiamento: os dois campos que a coordenação
-  // cadastra e que aparecem junto ao resumo. Ver src/lib/projetos-equipe.ts.
-  const equipe = equipeDoProjeto(projeto);
+  // Equipe de estudantes (selecionados que aceitaram a convocação, lidos das
+  // inscrições) e financiamento (cadastrado pela coordenação). Ver
+  // src/lib/projetos-equipe.ts.
+  const equipe = await buscarEquipeDoProjeto(projeto.id);
   const financiamento = financiamentoDoProjeto(projeto);
 
   // Projetos relacionados = MESMO COORDENADOR do projeto aberto.
@@ -214,8 +216,7 @@ export default async function ProjetoPage({ params }: { params: Params }) {
 
             {/* Estudantes do projeto — bolsistas e voluntários que já atuam.
                 Mostrar a equipe formada motiva quem está pensando em se
-                inscrever (só nomes cadastrados pela coordenação; o portal não
-                publica inscrito automaticamente). */}
+                inscrever. Vêm das inscrições: selecionado + convocação aceita. */}
             {equipe.total > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 p-6">
                 <div className="flex items-center justify-between gap-3 mb-1">

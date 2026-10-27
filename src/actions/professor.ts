@@ -17,7 +17,8 @@ import { rotuloRespostaAluno } from '@/lib/inscricao-aluno';
 import { mensagemVagaLotada } from '@/lib/vagas';
 import { limparAnexosRemovidos, validarMidiasDoPost } from '@/lib/post-midias-server';
 import { chaveDeIconeValida, erroDeUrlDeCapa } from '@/lib/post-capa';
-import { normalizarEstudantes, normalizarFinanciamento } from '@/lib/projetos-equipe';
+import { normalizarFinanciamento, normalizarViceCoordenacao, type EquipeDoProjeto } from '@/lib/projetos-equipe';
+import { buscarEquipeDoProjeto } from '@/lib/projetos-equipe-db';
 import { validarDocumentoHtml, type DocumentoHtmlRecebido } from '@/lib/post-documento-html';
 import { chaveDoDiaBrasil, fimDoDiaBrasil, inicioDoDiaBrasil, parseDataDoFormulario, formatarDataBrasil } from '@/lib/datas';
 import {
@@ -46,11 +47,11 @@ export type MyProjetoFormData = {
   email?: string;
   instagram?: string;
   site?: string;
-  /** Equipe de estudantes exibida na página pública (ver src/lib/projetos-equipe.ts). */
-  estudantesBolsistas?: string[];
-  estudantesVoluntarios?: string[];
   /** Fontes de financiamento exibidas como selos junto ao resumo. */
   financiamento?: string[];
+  /** Vice-coordenação (o e-mail dá acesso ao painel do projeto). */
+  viceCoordenadorNome?: string;
+  viceCoordenadorEmail?: string;
   formularioExtra?: PerguntaExtra[];
 };
 
@@ -141,6 +142,11 @@ export type PaginaProjetoFormData = {
   email?: string;
   instagram?: string;
   site?: string;
+  /** Selos de financiamento — apresentação pública, o gestor também edita. */
+  financiamento?: string[];
+  /** Só coordenação/admin: o e-mail do vice dá acesso ao painel do projeto. */
+  viceCoordenadorNome?: string;
+  viceCoordenadorEmail?: string;
 };
 
 export type GestorDaPagina = {
@@ -165,7 +171,7 @@ export type CandidatoAGestor = {
 export async function getPaginaDoProjeto(projetoId: string, userEmail: string) {
   if (!(await temAcessoAoProjeto(projetoId, userEmail, { incluirGestor: true }))) return null;
 
-  return prisma.projeto.findUnique({
+  const projeto = await prisma.projeto.findUnique({
     where: { id: projetoId },
     select: {
       id: true,
@@ -179,8 +185,62 @@ export async function getPaginaDoProjeto(projetoId: string, userEmail: string) {
       email: true,
       instagram: true,
       site: true,
+      financiamento: true,
+      viceCoordenadorNome: true,
+      viceCoordenadorEmail: true,
     },
   });
+  if (!projeto) return null;
+
+  return {
+    ...projeto,
+    equipe: await buscarEquipeDoProjeto(projetoId),
+    // Sem `incluirGestor`: só coordenação/admin muda o vice (o aluno gestor vê, não edita).
+    podeEditarVice: await temAcessoAoProjeto(projetoId, userEmail),
+  };
+}
+
+/** Equipe de estudantes (selecionados que aceitaram a convocação) — leitura. */
+export async function getEquipeDoProjeto(
+  projetoId: string,
+  userEmail: string,
+): Promise<EquipeDoProjeto | null> {
+  if (!(await temAcessoAoProjeto(projetoId, userEmail, { incluirGestor: true }))) return null;
+  return buscarEquipeDoProjeto(projetoId);
+}
+
+/**
+ * Salva só financiamento e vice-coordenação (bloco "Equipe e financiamento" da
+ * tela de gestão do projeto). Coordenação/admin apenas: o e-mail do vice dá
+ * acesso ao painel.
+ */
+export async function salvarEquipeEFinanciamento(
+  projetoId: string,
+  data: { financiamento?: string[]; viceCoordenadorNome?: string; viceCoordenadorEmail?: string },
+  userEmail: string,
+): Promise<ActionResult> {
+  try {
+    if (!(await temAcessoAoProjeto(projetoId, userEmail))) {
+      return { ok: false, error: MENSAGENS.semPermissaoCoordenador };
+    }
+
+    const financiamento = normalizarFinanciamento(data.financiamento);
+    if (!financiamento.ok) return financiamento;
+    const vice = normalizarViceCoordenacao(data);
+    if (!vice.ok) return vice;
+
+    await prisma.projeto.update({
+      where: { id: projetoId },
+      data: { financiamento: financiamento.valor, ...vice.valor },
+    });
+    cache.invalidate('chat:');
+    cache.invalidate('home:');
+    await sincronizarProjetoSintetico(projetoId).catch(console.error);
+
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: translatePrismaError(e) };
+  }
 }
 
 /** Salva apenas a apresentação da página — exclusivo de quem coordena ou gere. */
@@ -228,6 +288,18 @@ export async function salvarPaginaDoProjeto(
       return { ok: false, error: 'O Instagram informado é longo demais.' };
     }
 
+    const financiamento = normalizarFinanciamento(data.financiamento);
+    if (!financiamento.ok) return financiamento;
+
+    // O vice só muda por quem coordena (ou admin). Para o aluno gestor o campo é
+    // ignorado no servidor — esconder o input na tela não basta, porque o
+    // e-mail do vice dá acesso ao painel do projeto.
+    const podeEditarVice =
+      (data.viceCoordenadorNome !== undefined || data.viceCoordenadorEmail !== undefined) &&
+      (await temAcessoAoProjeto(projetoId, userEmail));
+    const vice = podeEditarVice ? normalizarViceCoordenacao(data) : null;
+    if (vice && !vice.ok) return vice;
+
     await prisma.projeto.update({
       where: { id: projetoId },
       data: {
@@ -239,6 +311,8 @@ export async function salvarPaginaDoProjeto(
         email: email || null,
         instagram: instagram || null,
         site: site || null,
+        ...(data.financiamento !== undefined ? { financiamento: financiamento.valor } : {}),
+        ...(vice?.ok ? vice.valor : {}),
       },
     });
     cache.invalidate('chat:');
@@ -447,9 +521,9 @@ export async function updateMyProjeto(
         email: data.email || null,
         instagram: data.instagram || null,
         site: data.site || null,
-        estudantesBolsistas: data.estudantesBolsistas,
-        estudantesVoluntarios: data.estudantesVoluntarios,
         financiamento: data.financiamento,
+        viceCoordenadorNome: data.viceCoordenadorNome,
+        viceCoordenadorEmail: data.viceCoordenadorEmail,
         formularioExtra: data.formularioExtra,
       },
       bloqueados,
@@ -469,9 +543,8 @@ export async function updateMyProjeto(
       email: string | null;
       formularioExtra: unknown;
       status: string | null;
-      estudantesBolsistas: string[] | null;
-      estudantesVoluntarios: string[] | null;
       financiamento: string[] | null;
+      vice: { viceCoordenadorNome: string | null; viceCoordenadorEmail: string | null } | null;
     }>({
       nome: () => validarSePresente(permitido.nome, (x) => validarTexto(x, 'Nome do projeto', LIMITES.titulo)),
       coordenador: () => validarSePresente(permitido.coordenador, (x) => validarTextoOpcional(x, 'Coordenador', LIMITES.linha)),
@@ -483,15 +556,13 @@ export async function updateMyProjeto(
       ),
       formularioExtra: () => validarJsonPequeno(permitido.formularioExtra, 'Formulário de inscrição'),
       status: () => validarSePresente(permitido.status, (x) => validarOpcao(x, 'Situação do projeto', OPCOES.statusProjeto)),
-      estudantesBolsistas: () => validarSePresente(permitido.estudantesBolsistas, (x) =>
-        normalizarEstudantes(x, 'Estudantes bolsistas'),
-      ),
-      estudantesVoluntarios: () => validarSePresente(permitido.estudantesVoluntarios, (x) =>
-        normalizarEstudantes(x, 'Estudantes voluntários'),
-      ),
       financiamento: () => validarSePresente(permitido.financiamento, (x) =>
         normalizarFinanciamento(x),
       ),
+      vice: () =>
+        permitido.viceCoordenadorNome === undefined && permitido.viceCoordenadorEmail === undefined
+          ? { ok: true as const, valor: null }
+          : normalizarViceCoordenacao(permitido),
     });
     if (!v.ok) return v;
 
@@ -538,14 +609,12 @@ export async function updateMyProjeto(
     if (permitido.formularioExtra !== undefined) {
       update.formulario_extra = v.valor.formularioExtra as Prisma.InputJsonValue;
     }
-    if (permitido.estudantesBolsistas !== undefined) {
-      update.estudantesBolsistas = v.valor.estudantesBolsistas ?? [];
-    }
-    if (permitido.estudantesVoluntarios !== undefined) {
-      update.estudantesVoluntarios = v.valor.estudantesVoluntarios ?? [];
-    }
     if (permitido.financiamento !== undefined) {
       update.financiamento = v.valor.financiamento ?? [];
+    }
+    if (v.valor.vice) {
+      update.viceCoordenadorNome = v.valor.vice.viceCoordenadorNome;
+      update.viceCoordenadorEmail = v.valor.vice.viceCoordenadorEmail;
     }
 
     if (Object.keys(update).length === 0) {
@@ -717,6 +786,12 @@ export async function updateInscricaoStatus(
           }),
         )
         .catch(console.error);
+    }
+
+    // A equipe da página pública sai das inscrições (selecionado + aceitou):
+    // mudar o status altera quem aparece, então a base da IFizinha acompanha.
+    if (mudouStatus) {
+      void sincronizarProjetoSintetico(inscricaoAtual.projeto.id).catch(console.error);
     }
 
     // ROADMAP 6.2: espelha o aviso no portal (sino de notificações) para quem

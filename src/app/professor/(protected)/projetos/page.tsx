@@ -7,7 +7,8 @@ import {
   Search, TrendingUp, AlertCircle, Save, ExternalLink,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { listMyProjetos, listProjetosQueGerencio, updateMyProjeto, type MyProjetoFormData } from '@/actions/professor';
+import { listMyProjetos, listProjetosQueGerencio, updateMyProjeto, getEquipeDoProjeto, type MyProjetoFormData } from '@/actions/professor';
+import type { EquipeDoProjeto } from '@/lib/projetos-equipe';
 import { getStatusLabel, getStatusColor, formatDateShort } from '@/lib/utils';
 import { FormularioExtraEditor } from '@/components/ui/FormularioExtraEditor';
 import { parsePerguntasExtra, type PerguntaExtra } from '@/lib/formulario-extra';
@@ -42,8 +43,10 @@ export default function ProfessorProjetosPage() {
     status: 'EM_EXECUCAO', corPrimaria: '#2F52D3',
     logoUrl: '', bannerUrl: '',
     email: '', instagram: '', site: '', formularioExtra: [],
-    estudantesBolsistas: [], estudantesVoluntarios: [], financiamento: [],
+    financiamento: [], viceCoordenadorNome: '', viceCoordenadorEmail: '',
   });
+  // Estudantes do projeto = inscrições selecionadas que aceitaram a convocação.
+  const [equipe, setEquipe] = useState<EquipeDoProjeto | null>(null);
   const [error, setError] = useMensagemErro();
   const [isPending, startTransition] = useTransition();
 
@@ -85,13 +88,19 @@ export default function ProfessorProjetosPage() {
       email: projeto.email ?? '',
       instagram: projeto.instagram ?? '',
       site: projeto.site ?? '',
-      estudantesBolsistas: projeto.estudantesBolsistas ?? [],
-      estudantesVoluntarios: projeto.estudantesVoluntarios ?? [],
       financiamento: projeto.financiamento ?? [],
+      viceCoordenadorNome: projeto.viceCoordenadorNome ?? '',
+      viceCoordenadorEmail: projeto.viceCoordenadorEmail ?? '',
       formularioExtra: parsePerguntasExtra(projeto.formulario_extra),
     });
     setError('');
     setPanelOpen(true);
+    setEquipe(null);
+    if (user?.email) {
+      getEquipeDoProjeto(projeto.id, user.email)
+        .then((e) => setEquipe(e ?? { bolsistas: [], voluntarios: [], total: 0 }))
+        .catch(console.error);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -327,12 +336,14 @@ export default function ProfessorProjetosPage() {
                   />
                 )}
 
-                {/* Equipe de estudantes + financiamento: aparecem na página
-                    pública junto ao resumo (motivam quem pensa em se inscrever). */}
+                {/* Vice, estudantes (das inscrições) e financiamento: aparecem na
+                    página pública junto ao resumo. Mesmo bloco das outras telas. */}
                 <div className="pt-2 space-y-4">
                   <EquipeEFinanciamentoDoProjeto
                     valores={form}
-                    onChange={(campo, valor) => setForm((f) => ({ ...f, [campo]: valor }))}
+                    onChange={(alteracao) => setForm((f) => ({ ...f, ...alteracao }))}
+                    equipe={equipe}
+                    podeEditarVice={!somenteGestor}
                   />
                 </div>
 

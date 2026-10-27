@@ -5,6 +5,7 @@ import { translatePrismaError } from '@/lib/utils';
 import { resolverUsuarioDaSessao } from '@/lib/usuario-sessao';
 import { notificarCoordenadoresDoProjeto } from '@/lib/notificacoes';
 import { formatarDataBrasil } from '@/lib/datas';
+import { sincronizarProjetoSintetico } from '@/lib/projeto-sintetico';
 import type { Prisma } from '@prisma/client';
 import {
   ehRespostaConvocacao,
@@ -167,6 +168,9 @@ export async function desistirDaInscricao(
       },
     });
 
+    // Quem desiste sai da equipe da página pública.
+    void sincronizarProjetoSintetico(inscricao.projeto_id).catch(console.error);
+
     await registrarAuditoria({
       userId: sessao.userId,
       acao: 'desistencia_inscricao',
@@ -245,6 +249,10 @@ export async function responderConvocacao(
         ...(resposta === 'recusado' ? { status: 'desistente', desistiu_em: agora } : {}),
       },
     });
+
+    // Aceitar a convocação é o que coloca o estudante na equipe da página
+    // pública; a base da IFizinha acompanha (não bloqueia a resposta).
+    void sincronizarProjetoSintetico(inscricao.projeto_id).catch(console.error);
 
     await registrarAuditoria({
       userId: sessao.userId,

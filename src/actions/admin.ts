@@ -12,7 +12,7 @@ import { sincronizarProjetoSintetico, removerProjetoSintetico } from '@/lib/proj
 import { sanitizeHtml } from '@/lib/rich-text';
 import { limparAnexosRemovidos, validarMidiasDoPost } from '@/lib/post-midias-server';
 import { chaveDeIconeValida, erroDeUrlDeCapa } from '@/lib/post-capa';
-import { normalizarEstudantes, normalizarFinanciamento } from '@/lib/projetos-equipe';
+import { normalizarFinanciamento, normalizarViceCoordenacao } from '@/lib/projetos-equipe';
 import { validarDocumentoHtml, type DocumentoHtmlRecebido } from '@/lib/post-documento-html';
 import { getVerifiedServerSession } from '@/lib/session';
 import { lerVisao } from '@/lib/visao-server';
@@ -297,9 +297,6 @@ export type ProjetoFormData = {
   dataInicio?: string;
   servidores?: string;
   alunos?: string;
-  /** Equipe de estudantes exibida na página pública (ver src/lib/projetos-equipe.ts). */
-  estudantesBolsistas?: string[];
-  estudantesVoluntarios?: string[];
   /** Fontes de financiamento exibidas como selos junto ao resumo. */
   financiamento?: string[];
   observacao?: string;
@@ -394,14 +391,12 @@ export async function createProjeto(data: ProjetoFormData, callerEmail: string):
       return { ok: false, error: MENSAGENS.campoObrigatorio('Área') };
     }
 
-    // Equipe e financiamento aparecem na página pública: o teto/limpeza é do
+    // Financiamento e vice aparecem na página pública: o teto/limpeza é do
     // servidor (o formulário pode ser chamado direto, sem passar pela tela).
-    const bolsistas = normalizarEstudantes(data.estudantesBolsistas, 'Estudantes bolsistas');
-    if (!bolsistas.ok) return bolsistas;
-    const voluntarios = normalizarEstudantes(data.estudantesVoluntarios, 'Estudantes voluntários');
-    if (!voluntarios.ok) return voluntarios;
     const financiamento = normalizarFinanciamento(data.financiamento);
     if (!financiamento.ok) return financiamento;
+    const vice = normalizarViceCoordenacao(data);
+    if (!vice.ok) return vice;
 
     const slug = slugify(nome);
     const { adminEmails, ...dbData } = data;
@@ -411,16 +406,13 @@ export async function createProjeto(data: ProjetoFormData, callerEmail: string):
         slug,
         coordenador: dbData.coordenador,
         coordenadorEmail: dbData.coordenadorEmail?.trim().toLowerCase() || null,
-        viceCoordenadorNome: dbData.viceCoordenadorNome?.trim() || null,
-        viceCoordenadorEmail: dbData.viceCoordenadorEmail?.trim().toLowerCase() || null,
+        ...vice.valor,
         area: dbData.area,
         descricao: dbData.descricao ?? null,
         resumoCurto: dbData.resumoCurto ?? null,
         dataInicio: dbData.dataInicio ? new Date(dbData.dataInicio) : null,
         servidores: dbData.servidores ?? null,
         alunos: dbData.alunos ?? null,
-        estudantesBolsistas: bolsistas.valor,
-        estudantesVoluntarios: voluntarios.valor,
         financiamento: financiamento.valor,
         observacao: dbData.observacao ?? null,
         status: dbData.status,
@@ -470,8 +462,13 @@ export async function updateProjeto(id: string, data: Partial<ProjetoFormData>, 
     }
     if (data.coordenador !== undefined) updateData.coordenador = data.coordenador;
     if (data.coordenadorEmail !== undefined) updateData.coordenadorEmail = data.coordenadorEmail?.trim().toLowerCase() || null;
-    if (data.viceCoordenadorNome !== undefined) updateData.viceCoordenadorNome = data.viceCoordenadorNome?.trim() || null;
-    if (data.viceCoordenadorEmail !== undefined) updateData.viceCoordenadorEmail = data.viceCoordenadorEmail?.trim().toLowerCase() || null;
+    if (data.viceCoordenadorNome !== undefined || data.viceCoordenadorEmail !== undefined) {
+      const vice = normalizarViceCoordenacao(data);
+      if (!vice.ok) return vice;
+      // Só grava o que veio: mandar apenas o nome não pode apagar o e-mail do vice.
+      if (data.viceCoordenadorNome !== undefined) updateData.viceCoordenadorNome = vice.valor.viceCoordenadorNome;
+      if (data.viceCoordenadorEmail !== undefined) updateData.viceCoordenadorEmail = vice.valor.viceCoordenadorEmail;
+    }
     if (data.area !== undefined) updateData.area = data.area;
     if (data.descricao !== undefined) updateData.descricao = data.descricao;
     if (data.descricao !== undefined) updateData.descricao = data.descricao;
@@ -479,16 +476,6 @@ export async function updateProjeto(id: string, data: Partial<ProjetoFormData>, 
     if (data.dataInicio !== undefined) updateData.dataInicio = data.dataInicio ? parseDataDoFormulario(data.dataInicio) : null;
     if (data.servidores !== undefined) updateData.servidores = data.servidores;
     if (data.alunos !== undefined) updateData.alunos = data.alunos;
-    if (data.estudantesBolsistas !== undefined) {
-      const bolsistas = normalizarEstudantes(data.estudantesBolsistas, 'Estudantes bolsistas');
-      if (!bolsistas.ok) return bolsistas;
-      updateData.estudantesBolsistas = bolsistas.valor;
-    }
-    if (data.estudantesVoluntarios !== undefined) {
-      const voluntarios = normalizarEstudantes(data.estudantesVoluntarios, 'Estudantes voluntários');
-      if (!voluntarios.ok) return voluntarios;
-      updateData.estudantesVoluntarios = voluntarios.valor;
-    }
     if (data.financiamento !== undefined) {
       const financiamento = normalizarFinanciamento(data.financiamento);
       if (!financiamento.ok) return financiamento;

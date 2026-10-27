@@ -26,12 +26,13 @@ export const CAMPOS_LIVRES_DO_PROFESSOR = [
   'email',
   'instagram',
   'site',
-  // Equipe de estudantes e financiamento exibidos na página pública. São
-  // campos do portal (não institucionais): o professor continua dono deles
-  // mesmo em projeto importado do SUAP.
-  'estudantesBolsistas',
-  'estudantesVoluntarios',
+  // Financiamento e vice-coordenação exibidos na página pública. São campos
+  // do portal (não institucionais): o professor continua dono deles mesmo em
+  // projeto importado do SUAP. A equipe de estudantes não entra aqui: vem das
+  // inscrições (ver src/lib/projetos-equipe.ts).
   'financiamento',
+  'viceCoordenadorNome',
+  'viceCoordenadorEmail',
   'formularioExtra',
 ] as const;
 
@@ -126,11 +127,11 @@ export type DadosEdicaoProfessor = {
   email?: string | null;
   instagram?: string | null;
   site?: string | null;
-  // Equipe de estudantes e financiamento: campos do projeto (não vêm do SUAP),
-  // por isso o professor sempre pode editá-los — ver src/lib/projetos-equipe.ts.
-  estudantesBolsistas?: string[];
-  estudantesVoluntarios?: string[];
+  // Financiamento e vice-coordenação: campos do projeto (não vêm do SUAP), por
+  // isso o professor sempre pode editá-los — ver src/lib/projetos-equipe.ts.
   financiamento?: string[];
+  viceCoordenadorNome?: string | null;
+  viceCoordenadorEmail?: string | null;
   formularioExtra?: unknown;
 };
 

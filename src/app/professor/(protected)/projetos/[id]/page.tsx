@@ -14,8 +14,14 @@ import {
   getProjetoDetalhes, listInscricoes, updateInscricaoStatus, exportInscricoesCSV, toggleInscricoes, abrirInscricoes,
   listVagas, createVaga, updateVaga, deleteVaga, type VagaFormData,
   listarGestoresDaPagina, listarCandidatosAGestor, definirGestorDaPagina,
+  getEquipeDoProjeto, salvarEquipeEFinanciamento,
   type GestorDaPagina, type CandidatoAGestor,
 } from '@/actions/professor';
+import {
+  EquipeEFinanciamentoDoProjeto,
+  type EquipeEFinanciamentoValores,
+} from '@/components/projetos/EquipeEFinanciamentoDoProjeto';
+import type { EquipeDoProjeto } from '@/lib/projetos-equipe';
 import { getStatusLabel, getStatusColor, formatDateShort } from '@/lib/utils';
 import { rotuloRespostaAluno } from '@/lib/inscricao-aluno';
 import { vagaExcedeCota } from '@/lib/vagas';
@@ -51,6 +57,33 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
   // É o que evita o aluno receber uma notificação a cada troca no select.
   const [pendingStatus, setPendingStatus] = useState<Record<string, string>>({});
   const [confirmandoStatus, setConfirmandoStatus] = useState<string | null>(null);
+
+  // Bloco "Equipe e financiamento": mesmo componente do painel "Editar Projeto"
+  // e da "Página do projeto". A equipe de estudantes sai das inscrições.
+  const [equipe, setEquipe] = useState<EquipeDoProjeto | null>(null);
+  const [dadosEquipe, setDadosEquipe] = useState<EquipeEFinanciamentoValores>({});
+  const [salvandoEquipe, setSalvandoEquipe] = useState(false);
+
+  const recarregarEquipe = async () => {
+    if (!user?.email) return;
+    setEquipe(await getEquipeDoProjeto(params.id, user.email));
+  };
+
+  const salvarEquipe = async () => {
+    if (!user?.email) return;
+    setSalvandoEquipe(true);
+    const r = await salvarEquipeEFinanciamento(
+      params.id,
+      {
+        financiamento: dadosEquipe.financiamento ?? [],
+        viceCoordenadorNome: dadosEquipe.viceCoordenadorNome ?? '',
+        viceCoordenadorEmail: dadosEquipe.viceCoordenadorEmail ?? '',
+      },
+      user.email,
+    );
+    toast(r.ok ? 'Vice-coordenação e financiamento atualizados.' : r.error, r.ok ? 'success' : 'error');
+    setSalvandoEquipe(false);
+  };
 
   const recarregarGestores = async () => {
     if (!user?.email) return;
@@ -106,6 +139,12 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
       .then((p) => {
         if (!p) { router.replace('/professor'); return; }
         setProjeto(p);
+        setDadosEquipe({
+          financiamento: p.financiamento ?? [],
+          viceCoordenadorNome: p.viceCoordenadorNome ?? '',
+          viceCoordenadorEmail: p.viceCoordenadorEmail ?? '',
+        });
+        void recarregarEquipe().catch(console.error);
         void recarregarGestores().catch(console.error);
         return Promise.all([
           listInscricoes(params.id, user.email!),
@@ -194,6 +233,7 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
       // Um aluno recém-selecionado passa a aparecer na lista de candidatos a
       // gestor da página sem precisar recarregar o painel.
       void recarregarGestores().catch(console.error);
+      void recarregarEquipe().catch(console.error);
     } else {
       toast(result.error || 'Não conseguimos alterar o status desta inscrição. Tente novamente.', 'error');
     }
@@ -375,6 +415,29 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
               <p className="text-gray-400 text-xs mb-1">Inscrições</p>
               <p className="font-medium text-gray-900">{projeto.status === 'INSCRICOES_ABERTAS' ? 'Abertas' : 'Fechadas'}</p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Equipe e financiamento — mesmo bloco do painel "Editar Projeto" e da
+          "Página do projeto" */}
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <div className="p-5 space-y-4">
+          <EquipeEFinanciamentoDoProjeto
+            valores={dadosEquipe}
+            onChange={(alteracao) => setDadosEquipe((atual) => ({ ...atual, ...alteracao }))}
+            equipe={equipe}
+          />
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={salvarEquipe}
+              disabled={salvandoEquipe}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-azul-eletrico text-white text-sm font-semibold hover:bg-azul-eletrico/90 disabled:opacity-60 transition-colors"
+            >
+              {salvandoEquipe && <Loader2 className="w-4 h-4 animate-spin" />}
+              {salvandoEquipe ? 'Salvando...' : 'Salvar vice e financiamento'}
+            </button>
           </div>
         </div>
       </div>

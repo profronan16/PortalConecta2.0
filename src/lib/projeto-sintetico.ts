@@ -21,7 +21,8 @@ import { cache } from '@/lib/cache';
 import { createHash } from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { getStatusLabel } from '@/lib/utils';
-import { equipeDoProjeto, financiamentoDoProjeto } from '@/lib/projetos-equipe';
+import { financiamentoDoProjeto, type EquipeDoProjeto } from '@/lib/projetos-equipe';
+import { buscarEquipeDoProjeto } from '@/lib/projetos-equipe-db';
 import { Prisma } from '@prisma/client';
 import { createLogger } from '@/lib/logger';
 
@@ -36,7 +37,7 @@ const projetoComRelacoes = Prisma.validator<Prisma.ProjetoDefaultArgs>()({
 });
 type ProjetoComRelacoes = Prisma.ProjetoGetPayload<typeof projetoComRelacoes>;
 
-function gerarTextoSintetico(projeto: ProjetoComRelacoes): string {
+function gerarTextoSintetico(projeto: ProjetoComRelacoes, equipe: EquipeDoProjeto): string {
   const linhas: string[] = [];
 
   linhas.push(`Projeto: ${projeto.nome}`);
@@ -48,10 +49,10 @@ function gerarTextoSintetico(projeto: ProjetoComRelacoes): string {
     linhas.push(`Vice-coordenador: ${projeto.viceCoordenadorNome}${projeto.viceCoordenadorEmail ? ` (${projeto.viceCoordenadorEmail})` : ''}`);
   }
 
-  // Equipe e financiamento vêm dos campos que a página pública mostra junto
-  // ao resumo. Entram no documento para a IFizinha conseguir responder "quem
-  // são os bolsistas deste projeto?" e "quem financia o projeto?".
-  const equipe = equipeDoProjeto(projeto);
+  // Equipe (das inscrições aceitas) e financiamento são os mesmos dados que a
+  // página pública mostra junto ao resumo. Entram no documento para a IFizinha
+  // conseguir responder "quem são os bolsistas deste projeto?" e "quem
+  // financia o projeto?".
   if (equipe.bolsistas.length > 0) linhas.push(`Estudantes bolsistas: ${equipe.bolsistas.join(', ')}`);
   if (equipe.voluntarios.length > 0) linhas.push(`Estudantes voluntários: ${equipe.voluntarios.join(', ')}`);
   const financiamento = financiamentoDoProjeto(projeto);
@@ -127,7 +128,7 @@ export async function sincronizarProjetoSintetico(projetoId: string): Promise<vo
       return;
     }
 
-    const texto = gerarTextoSintetico(projeto);
+    const texto = gerarTextoSintetico(projeto, await buscarEquipeDoProjeto(projetoId));
     const hash = createHash('sha256').update(texto).digest('hex');
 
     if (existente && existente.hashArquivo === hash && existente.ativo && ['indexed', 'textual'].includes(existente.status)) {
