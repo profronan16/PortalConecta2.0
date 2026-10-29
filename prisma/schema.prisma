@@ -332,8 +332,26 @@ model Post {
   projeto       Projeto    @relation(fields: [projetoId], references: [id])
   authorId      String
   author        User       @relation(fields: [authorId], references: [id])
+  // Post feito a partir de um arquivo .html enviado pelo professor (com o
+  // próprio CSS, imagens e scripts). Fica numa tabela à parte para que nenhuma
+  // listagem de posts carregue o documento sem pedir — ver
+  // src/lib/post-documento-html.ts.
+  documentoHtml PostDocumentoHtml?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
+}
+
+// Documento HTML completo de um post (1:1). O `Post.conteudo` continua
+// existindo com o TEXTO extraído do documento: é ele que alimenta a busca, o
+// resumo dos cards e o `<meta description>`.
+model PostDocumentoHtml {
+  postId      String   @id
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  html        String   @db.Text
+  nomeArquivo String?
+  bytes       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 enum StatusPost {

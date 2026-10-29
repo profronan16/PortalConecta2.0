@@ -18,6 +18,7 @@ import { mensagemVagaLotada } from '@/lib/vagas';
 import { limparAnexosRemovidos, validarMidiasDoPost } from '@/lib/post-midias-server';
 import { chaveDeIconeValida, erroDeUrlDeCapa } from '@/lib/post-capa';
 import { normalizarEstudantes, normalizarFinanciamento } from '@/lib/projetos-equipe';
+import { validarDocumentoHtml, type DocumentoHtmlRecebido } from '@/lib/post-documento-html';
 import { chaveDoDiaBrasil, fimDoDiaBrasil, inicioDoDiaBrasil, parseDataDoFormulario, formatarDataBrasil } from '@/lib/datas';
 import {
   LIMITES, OPCOES, validarCampos, validarCorHexadecimal, validarEmail, validarJsonPequeno,
@@ -1253,6 +1254,12 @@ export type PostFormData = {
   status: 'RASCUNHO' | 'PUBLICADO';
   /** Anexos (PDF, ZIP, RAR) já enviados para o storage local. */
   anexos?: unknown;
+  /**
+   * Post feito de um arquivo .html (src/lib/post-documento-html.ts).
+   * `undefined` mantém o que já existe; `null` remove o documento (o post volta
+   * a ser só o texto do editor).
+   */
+  documentoHtml?: DocumentoHtmlRecebido | null;
 };
 
 /**
@@ -1300,9 +1307,24 @@ export async function listPosts(projetoId: string, userEmail: string) {
   const posts = await prisma.post.findMany({
     where: { projetoId },
     orderBy: { createdAt: 'desc' },
+    // Só o resumo do documento: a lista precisa saber QUE o post é um HTML, não
+    // carregar o arquivo de cada um (ver `getDocumentoHtmlDoPost`).
+    include: { documentoHtml: { select: { nomeArquivo: true, bytes: true } } },
   });
 
   return { ok: true, data: posts } as const;
+}
+
+/** Documento HTML de um post, para a pré-visualização ao editar. */
+export async function getDocumentoHtmlDoPost(postId: string, userEmail: string) {
+  const post = await prisma.post.findUnique({
+    where: { id: postId },
+    select: { projetoId: true, documentoHtml: { select: { html: true, nomeArquivo: true, bytes: true } } },
+  });
+  if (!post) return { ok: false, error: 'Não encontramos esta publicação. Ela pode ter sido removida por outra pessoa.' } as const;
+  if (!(await temAcessoAoProjeto(post.projetoId, userEmail, { incluirGestor: true }))) return { ok: false, error: MENSAGENS.semPermissao } as const;
+
+  return { ok: true, data: post.documentoHtml } as const;
 }
 
 export async function createPost(projetoId: string, data: PostFormData, userEmail: string): Promise<ActionResult> {
@@ -1312,7 +1334,11 @@ export async function createPost(projetoId: string, data: PostFormData, userEmai
     const user = await prisma.user.findUnique({ where: { email: userEmail } });
     if (!user) return { ok: false, error: MENSAGENS.usuarioNaoEncontrado };
 
-    const v = validarCamposDoPost(data);
+    // Post de documento HTML: o texto do post sai do próprio documento.
+    const documento = data.documentoHtml ? validarDocumentoHtml(data.documentoHtml) : null;
+    if (documento && !documento.ok) return documento;
+
+    const v = validarCamposDoPost(documento ? { ...data, conteudo: documento.valor.conteudo } : data);
     if (!v.ok) return v;
 
     const conteudo = sanitizeHtml(v.valor.conteudo);
@@ -1335,6 +1361,11 @@ export async function createPost(projetoId: string, data: PostFormData, userEmai
         status: data.status,
         projetoId,
         authorId: user.id,
+        ...(documento ? {
+          documentoHtml: {
+            create: { html: documento.valor.html, nomeArquivo: documento.valor.nomeArquivo, bytes: documento.valor.bytes },
+          },
+        } : {}),
       },
     });
 
@@ -1354,12 +1385,19 @@ export async function updatePost(postId: string, data: PostFormData, userEmail: 
 
     if (!(await temAcessoAoProjeto(post.projetoId, userEmail, { incluirGestor: true }))) return { ok: false, error: MENSAGENS.semPermissao };
 
-    const v = validarCamposDoPost(data);
+    const documento = data.documentoHtml ? validarDocumentoHtml(data.documentoHtml) : null;
+    if (documento && !documento.ok) return documento;
+
+    const v = validarCamposDoPost(documento ? { ...data, conteudo: documento.valor.conteudo } : data);
     if (!v.ok) return v;
 
     const conteudo = sanitizeHtml(v.valor.conteudo);
     const midias = await validarMidiasDoPost(conteudo, data.anexos);
     if (!midias.ok) return { ok: false, error: midias.error };
+
+    const dadosDocumento = documento
+      ? { html: documento.valor.html, nomeArquivo: documento.valor.nomeArquivo, bytes: documento.valor.bytes }
+      : null;
 
     await prisma.post.update({
       where: { id: postId },
@@ -1371,8 +1409,16 @@ export async function updatePost(postId: string, data: PostFormData, userEmail: 
         icone: chaveDeIconeValida(data.icone) ? data.icone : null,
         anexos: midias.anexos as unknown as Prisma.InputJsonValue,
         status: data.status,
+        ...(dadosDocumento ? { documentoHtml: { upsert: { create: dadosDocumento, update: dadosDocumento } } } : {}),
       },
     });
+
+    // `null` = o professor voltou para o editor e o post passa a ser só texto.
+    // `deleteMany` (e não o `delete` aninhado) porque não falha quando o post
+    // nunca teve documento.
+    if (data.documentoHtml === null) {
+      await prisma.postDocumentoHtml.deleteMany({ where: { postId } });
+    }
 
     // Anexo que saiu da lista sai do disco também (o botão "remover" promete
     // isso, e arquivo órfão é espaço parado na VPS). A limpeza nunca derruba a

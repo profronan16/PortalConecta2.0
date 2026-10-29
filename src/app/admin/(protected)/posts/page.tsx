@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState, useTransition, Suspense } from 'react';
 import Link from 'next/link';
-import { Plus, Pencil, Trash2, X, Newspaper, AlertCircle, Filter, ExternalLink, EyeOff } from 'lucide-react';
-import { listPosts, createPost, updatePost, deletePost, listProjetos, type PostFormData } from '@/actions/admin';
+import { Plus, Pencil, Trash2, X, Newspaper, AlertCircle, Filter, ExternalLink, EyeOff, FileCode2, Type } from 'lucide-react';
+import { listPosts, createPost, updatePost, deletePost, listProjetos, getDocumentoHtmlDoPost, type PostFormData } from '@/actions/admin';
 import { useAuth } from '@/contexts/AuthContext';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -11,6 +11,7 @@ import { RichTextEditor } from '@/components/ui/RichTextEditor';
 import { PostAnexosUploader } from '@/components/ui/PostAnexosUploader';
 import { SeletorDeCapaDoPost } from '@/components/ui/SeletorDeCapaDoPost';
 import { CampoUrlDaCapa } from '@/components/ui/CampoUrlDaCapa';
+import { DocumentoHtmlUploader, type DocumentoHtmlNoFormulario } from '@/components/ui/DocumentoHtmlUploader';
 import { enviarArquivo } from '@/lib/upload-midia';
 import { anexosDoJson } from '@/lib/post-midias';
 import { chaveDeIconeValida } from '@/lib/post-capa';
@@ -35,6 +36,10 @@ function AdminPostsContent() {
   const [isPending, startTransition] = useTransition();
   const [deletePostId, setDeletePostId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Conteúdo escrito no editor ou vindo de um arquivo .html (ver o painel do professor).
+  const [modo, setModo] = useState<'editor' | 'html'>('editor');
+  const [documento, setDocumento] = useState<DocumentoHtmlNoFormulario | null>(null);
+  const [carregandoDocumento, setCarregandoDocumento] = useState(false);
 
   // Peso das imagens do texto (vem do servidor: as de posts antigos foram
   // enviadas noutra sessão e o navegador não sabe o tamanho).
@@ -56,6 +61,7 @@ function AdminPostsContent() {
     setEditing(null);
     setForm({ ...EMPTY, projetoId: filterProjetoId || (projetos[0]?.id ?? '') });
     setError(''); setPanelOpen(true);
+    setModo('editor'); setDocumento(null);
     resetarPeso();
   };
 
@@ -77,6 +83,20 @@ function AdminPostsContent() {
     setError(''); setPanelOpen(true);
     resetarPeso();
     void recalcularPesoDoTexto(post.conteudo);
+
+    setDocumento(null);
+    setModo(post.documentoHtml ? 'html' : 'editor');
+    // O documento não vem na lista: é buscado só ao editar, para a pré-visualização.
+    if (post.documentoHtml && user?.email) {
+      setCarregandoDocumento(true);
+      getDocumentoHtmlDoPost(post.id, user.email)
+        .then((r) => {
+          if (!r.ok) setError(r.error, 'Não conseguimos carregar o documento HTML deste post.');
+          else if (r.data) setDocumento({ html: r.data.html, nome: r.data.nomeArquivo, bytes: r.data.bytes, alterado: false });
+        })
+        .catch(() => setError('Não conseguimos carregar o documento HTML deste post.'))
+        .finally(() => setCarregandoDocumento(false));
+    }
   };
 
   const handleDelete = (id: string) => {
@@ -97,14 +117,24 @@ function AdminPostsContent() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault(); setError('');
     if (!user?.email) { setError('Sua sessão expirou. Entre novamente para publicar.'); return; }
-    if (form.conteudo.replace(/<[^>]*>/g, '').trim().length === 0) {
+    if (modo === 'html' && !documento) {
+      setError('Escolha o arquivo HTML da publicação antes de salvar.');
+      return;
+    }
+    if (modo === 'editor' && form.conteudo.replace(/<[^>]*>/g, '').trim().length === 0) {
       setError('Escreva o texto principal da publicação antes de salvar.');
       return;
     }
+    // O documento só viaja quando foi escolhido agora. Voltar para o editor num
+    // post que tinha documento remove o documento (`null`).
+    const documentoHtml = modo === 'html'
+      ? (documento?.alterado ? { html: documento.html, nome: documento.nome } : undefined)
+      : (editing?.documentoHtml ? null : undefined);
+    const dados: PostFormData = { ...form, documentoHtml };
     startTransition(async () => {
       const r = editing
-        ? await updatePost(editing.id, form, user.email!)
-        : await createPost(form, user.email!);
+        ? await updatePost(editing.id, dados, user.email!)
+        : await createPost(dados, user.email!);
       if (r.ok) { setPanelOpen(false); load(); } else setError(r.error, 'Não conseguimos salvar a publicação. Tente novamente.');
     });
   };
@@ -165,6 +195,11 @@ function AdminPostsContent() {
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${p.status === 'PUBLICADO' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
                         {p.status === 'PUBLICADO' ? 'Publicado' : 'Rascunho'}
                       </span>
+                      {p.documentoHtml && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-azul-eletrico/10 text-azul-eletrico">
+                          <FileCode2 className="w-3 h-3" /> HTML
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
@@ -211,7 +246,14 @@ function AdminPostsContent() {
                 <tbody>
                   {filteredPosts.map((p) => (
                     <tr key={p.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
-                      <td className="px-4 py-3 font-medium text-gray-900 max-w-xs truncate">{p.titulo}</td>
+                      <td className="px-4 py-3 font-medium text-gray-900 max-w-xs truncate">
+                        {p.documentoHtml && (
+                          <span className="inline-flex items-center gap-1 mr-2 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-azul-eletrico/10 text-azul-eletrico align-middle" title={p.documentoHtml.nomeArquivo ?? 'Documento HTML'}>
+                            <FileCode2 className="w-3 h-3" /> HTML
+                          </span>
+                        )}
+                        {p.titulo}
+                      </td>
                       <td className="px-4 py-3 text-gray-500">{p.projeto.nome}</td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${p.status === 'PUBLICADO' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
@@ -295,6 +337,46 @@ function AdminPostsContent() {
                   <h3 className="text-sm font-bold text-gray-900 border-b pb-2">Conteúdo</h3>
                   <div>
                     <label className="label-field">Texto Principal <span className="text-red-500">*</span></label>
+                    <div className="flex gap-2 mb-2">
+                      <button
+                        type="button"
+                        onClick={() => setModo('editor')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                          modo === 'editor' ? 'bg-ciano-claro text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        <Type className="w-3.5 h-3.5" />
+                        Escrever no editor
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setModo('html')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                          modo === 'html' ? 'bg-ciano-claro text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        <FileCode2 className="w-3.5 h-3.5" />
+                        Enviar arquivo HTML
+                      </button>
+                    </div>
+                    {modo === 'html' ? (
+                      carregandoDocumento ? (
+                        <p className="text-sm text-gray-400 py-6 text-center">Carregando documento...</p>
+                      ) : (
+                        <>
+                          <DocumentoHtmlUploader
+                            documento={documento}
+                            onChange={setDocumento}
+                            onTituloSugerido={(titulo) => setForm((f) => (f.titulo.trim() ? f : { ...f, titulo: titulo.slice(0, 120) }))}
+                          />
+                          <p className="text-xs text-gray-400 mt-1">
+                            O post aparece no portal com a formatação do arquivo: cores, fontes, imagens e estilos.
+                            {editing?.documentoHtml ? ' Se voltar para o editor, o documento é removido ao salvar.' : ''}
+                          </p>
+                        </>
+                      )
+                    ) : (
+                    <>
                     <RichTextEditor
                       value={form.conteudo}
                       onChange={(html) => {
@@ -312,6 +394,8 @@ function AdminPostsContent() {
                     <p className="text-xs text-gray-400 mt-1">
                       O botão de imagem da barra insere a imagem no meio do texto. Imagens e anexos somam no limite de 20 MB do post.
                     </p>
+                    </>
+                    )}
                   </div>
                   <div>
                     <label className="label-field">Anexos</label>
@@ -384,7 +468,7 @@ function AdminPostsContent() {
               </div>
               <div className="sticky bottom-0 bg-white border-t border-gray-100 p-4 flex gap-3">
                 <button type="button" onClick={() => setPanelOpen(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-semibold text-sm hover:bg-gray-50 transition-all">Cancelar</button>
-                <button type="submit" disabled={isPending} className="flex-1 py-2.5 rounded-xl bg-ciano-claro text-white font-semibold text-sm hover:bg-ciano-claro/90 transition-all disabled:opacity-60">
+                <button type="submit" disabled={isPending || carregandoDocumento} className="flex-1 py-2.5 rounded-xl bg-ciano-claro text-white font-semibold text-sm hover:bg-ciano-claro/90 transition-all disabled:opacity-60">
                   {isPending ? 'Salvando...' : 'Salvar'}
                 </button>
               </div>

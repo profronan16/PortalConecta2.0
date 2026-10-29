@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { cache } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronRight, Calendar, ArrowLeft, FileText, ExternalLink, Video, FileArchive, Download } from 'lucide-react';
@@ -8,6 +8,7 @@ import { anexosDoJson, formatarMb } from '@/lib/post-midias';
 import { semCapaEscolhida } from '@/lib/post-capa';
 import { PostCapa } from '@/components/ui/PostCapa';
 import { SafeHtml } from '@/components/ui/SafeHtml';
+import { DocumentoHtmlDoPost } from '@/components/ui/DocumentoHtmlDoPost';
 import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
@@ -20,15 +21,18 @@ function ehPacote(nome: string): boolean {
   return minusculo.endsWith('.zip') || minusculo.endsWith('.rar');
 }
 
-async function getPost(slug: string, postSlug: string) {
+// `cache`: `generateMetadata` e a página pedem o mesmo post — sem isto o
+// documento HTML (que pode ter alguns MB) sairia do banco duas vezes.
+const getPost = cache(async (slug: string, postSlug: string) => {
   return prisma.post.findFirst({
     where: { slug: postSlug, status: 'PUBLICADO', projeto: { slug } },
     include: {
       projeto: { select: { nome: true, slug: true, corPrimaria: true } },
       author: { select: { name: true } },
+      documentoHtml: { select: { html: true } },
     },
   });
-}
+});
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const post = await getPost(params.slug, params.postSlug);
@@ -56,17 +60,21 @@ export default async function PostPage({ params }: { params: Params }) {
   if (!post) notFound();
 
   const anexos = anexosDoJson(post.anexos);
+  const documento = post.documentoHtml?.html ?? null;
+  // Documentos costumam ser diagramados para ~1000px; o texto do editor, não.
+  const largura = documento ? 'max-w-5xl' : 'max-w-3xl';
 
   const youtubeId = post.videoUrl?.includes('youtube.com/watch?v=')
     ? new URLSearchParams(new URL(post.videoUrl).search).get('v')
     : post.videoUrl?.includes('youtu.be/')
       ? post.videoUrl.split('youtu.be/')[1]?.split(/[?&]/)[0]
       : null;
+  const temExtras = !!(youtubeId || post.arquivoPdfUrl || post.linkExterno || post.videoUrl || anexos.length > 0);
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="pt-24 pb-10" style={{ background: `linear-gradient(135deg, ${post.projeto.corPrimaria} 0%, ${post.projeto.corPrimaria}cc 100%)` }}>
-        <div className="container mx-auto px-4 max-w-3xl">
+        <div className={`container mx-auto px-4 ${largura}`}>
           <div className="flex items-center gap-2 text-white/70 text-sm mb-4 flex-wrap">
             <Link href="/" className="hover:text-white transition-colors">Início</Link>
             <ChevronRight className="w-4 h-4" />
@@ -87,7 +95,7 @@ export default async function PostPage({ params }: { params: Params }) {
         </div>
       </div>
 
-      <div className="container mx-auto px-4 max-w-3xl py-8">
+      <div className={`container mx-auto px-4 ${largura} py-8`}>
         <Link
           href={`/projetos/${post.projeto.slug}`}
           className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 transition-colors mb-6"
@@ -96,16 +104,28 @@ export default async function PostPage({ params }: { params: Params }) {
           Voltar para {post.projeto.nome}
         </Link>
 
+        {/* Post feito de arquivo HTML: o documento ocupa o quadro inteiro, com o
+            visual dele (capa e texto do editor não entram — o documento já tem
+            os seus). */}
+        {documento && (
+          <div className={`bg-white rounded-2xl border border-gray-100 overflow-hidden ${temExtras ? 'mb-6' : ''}`}>
+            <DocumentoHtmlDoPost html={documento} titulo={post.titulo} />
+          </div>
+        )}
+
+        {(!documento || temExtras) && (
         <div className="bg-white rounded-2xl border border-gray-100 p-6 md:p-8 space-y-6">
           {/* No post, a faixa de capa só aparece quando há uma escolha explícita
               (imagem ou ícone). Sem isso, o topo da publicação ganharia uma
               faixa cinza grande sem significado. */}
-          {!semCapaEscolhida(post) && <PostCapa post={post} tamanho="hero" />}
+          {!documento && !semCapaEscolhida(post) && <PostCapa post={post} tamanho="hero" />}
 
-          <SafeHtml
-            html={post.conteudo}
-            className="prose prose-sm sm:prose-base max-w-none prose-p:text-gray-700 prose-headings:text-gray-900 prose-a:text-azul-eletrico"
-          />
+          {!documento && (
+            <SafeHtml
+              html={post.conteudo}
+              className="prose prose-sm sm:prose-base max-w-none prose-p:text-gray-700 prose-headings:text-gray-900 prose-a:text-azul-eletrico"
+            />
+          )}
 
           {youtubeId && (
             <div className="aspect-video bg-gray-100 rounded-xl overflow-hidden border border-gray-200">
@@ -192,6 +212,7 @@ export default async function PostPage({ params }: { params: Params }) {
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );

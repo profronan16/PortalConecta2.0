@@ -13,6 +13,7 @@ import { sanitizeHtml } from '@/lib/rich-text';
 import { limparAnexosRemovidos, validarMidiasDoPost } from '@/lib/post-midias-server';
 import { chaveDeIconeValida, erroDeUrlDeCapa } from '@/lib/post-capa';
 import { normalizarEstudantes, normalizarFinanciamento } from '@/lib/projetos-equipe';
+import { validarDocumentoHtml, type DocumentoHtmlRecebido } from '@/lib/post-documento-html';
 import { getVerifiedServerSession } from '@/lib/session';
 import { lerVisao } from '@/lib/visao-server';
 import type { Visao } from '@/lib/visao';
@@ -592,6 +593,11 @@ export type PostFormData = {
   projetoId: string;
   /** Anexos (PDF, ZIP, RAR) já enviados para o storage local do servidor. */
   anexos?: unknown;
+  /**
+   * Post feito de um arquivo .html (src/lib/post-documento-html.ts) — mesma
+   * regra do painel do professor: `undefined` mantém, `null` remove.
+   */
+  documentoHtml?: DocumentoHtmlRecebido | null;
 };
 
 export async function listPosts(userEmail?: string, userRole?: string) {
@@ -604,8 +610,35 @@ export async function listPosts(userEmail?: string, userRole?: string) {
     include: {
       projeto: { select: { nome: true, slug: true } },
       author: { select: { name: true } },
+      // Só o resumo: o documento em si é buscado ao editar (`getDocumentoHtmlDoPost`).
+      documentoHtml: { select: { nomeArquivo: true, bytes: true } },
     },
   });
+}
+
+/** Documento HTML de um post, para a pré-visualização ao editar no painel do admin. */
+export async function getDocumentoHtmlDoPost(postId: string, userEmail: string): Promise<ActionResult<{ html: string; nomeArquivo: string | null; bytes: number } | null>> {
+  try {
+    const userRecord = await prisma.user.findUnique({ where: { email: userEmail }, select: { role: true } });
+    if (!userRecord) return { ok: false, error: MENSAGENS.usuarioNaoEncontrado };
+
+    const post = await prisma.post.findUnique({
+      where: { id: postId },
+      select: { projetoId: true, documentoHtml: { select: { html: true, nomeArquivo: true, bytes: true } } },
+    });
+    if (!post) return { ok: false, error: 'Não encontramos esta publicação. Ela pode ter sido removida por outra pessoa.' };
+
+    // Mesma régua de `updatePost`: quem pode editar o post pode ver o documento.
+    if (userRecord.role === 'PROFESSOR') {
+      if (!(await isCoordenadorOuViceDoProjeto(post.projetoId, userEmail))) return { ok: false, error: MENSAGENS.semPermissaoCoordenador };
+    } else if (userRecord.role !== 'ADMIN') {
+      return { ok: false, error: MENSAGENS.semPermissao };
+    }
+
+    return { ok: true, data: post.documentoHtml };
+  } catch (e) {
+    return { ok: false, error: mensagemAmigavel(e, MENSAGENS.operacaoNaoConcluida) };
+  }
 }
 
 export async function createPost(data: PostFormData, authorEmail: string): Promise<ActionResult<{ id: string }>> {
@@ -630,7 +663,10 @@ export async function createPost(data: PostFormData, authorEmail: string): Promi
     // com o MESMO título colidam no `slug` (que é único no banco) — antes, criar
     // o segundo post com um título repetido devolvia erro de banco genérico.
     const slug = `${slugify(data.titulo)}-${Date.now().toString(36)}`;
-    const conteudo = sanitizeHtml(data.conteudo);
+    // Post de documento HTML: o texto do post sai do próprio documento.
+    const documento = data.documentoHtml ? validarDocumentoHtml(data.documentoHtml) : null;
+    if (documento && !documento.ok) return documento;
+    const conteudo = sanitizeHtml(documento ? documento.valor.conteudo : data.conteudo);
 
     const erroCapa = erroDeUrlDeCapa(data.imagemUrl);
     if (erroCapa) return { ok: false, error: erroCapa };
@@ -655,6 +691,11 @@ export async function createPost(data: PostFormData, authorEmail: string): Promi
         status: data.status,
         projetoId: data.projetoId,
         authorId: author.id,
+        ...(documento ? {
+          documentoHtml: {
+            create: { html: documento.valor.html, nomeArquivo: documento.valor.nomeArquivo, bytes: documento.valor.bytes },
+          },
+        } : {}),
       },
     });
     return { ok: true, data: { id: post.id } };
@@ -713,7 +754,15 @@ export async function updatePost(id: string, data: Partial<PostFormData>, userEm
       }
     }
 
-    const conteudoFinal = data.conteudo !== undefined ? sanitizeHtml(data.conteudo) : atual.conteudo;
+    const documento = data.documentoHtml ? validarDocumentoHtml(data.documentoHtml) : null;
+    if (documento && !documento.ok) return documento;
+    const dadosDocumento = documento
+      ? { html: documento.valor.html, nomeArquivo: documento.valor.nomeArquivo, bytes: documento.valor.bytes }
+      : null;
+
+    // Documento novo traz o próprio texto; senão vale o que veio do editor.
+    const conteudoEntrada = documento ? documento.valor.conteudo : data.conteudo;
+    const conteudoFinal = conteudoEntrada !== undefined ? sanitizeHtml(conteudoEntrada) : atual.conteudo;
     const anexosEntrada = data.anexos !== undefined ? data.anexos : atual.anexos;
 
     if (data.imagemUrl !== undefined) {
@@ -738,7 +787,7 @@ export async function updatePost(id: string, data: Partial<PostFormData>, userEm
       where: { id },
       data: {
         ...(data.titulo !== undefined ? { titulo: data.titulo } : {}),
-        ...(data.conteudo !== undefined ? { conteudo: conteudoFinal } : {}),
+        ...(conteudoEntrada !== undefined ? { conteudo: conteudoFinal } : {}),
         ...(data.resumo !== undefined ? { resumo: data.resumo ?? null } : {}),
         ...(data.imagemUrl !== undefined ? { imagemUrl: data.imagemUrl ?? null } : {}),
         ...(data.videoUrl !== undefined ? { videoUrl: data.videoUrl ?? null } : {}),
@@ -748,8 +797,15 @@ export async function updatePost(id: string, data: Partial<PostFormData>, userEm
         ...(data.status !== undefined ? { status: data.status } : {}),
         ...(projetoDestino ? { projetoId: projetoDestino } : {}),
         anexos: midias.anexos as unknown as Prisma.InputJsonValue,
+        ...(dadosDocumento ? { documentoHtml: { upsert: { create: dadosDocumento, update: dadosDocumento } } } : {}),
       },
     });
+
+    // `null` = voltou para o editor: o post passa a ser só texto. `deleteMany`
+    // não falha quando o post nunca teve documento.
+    if (data.documentoHtml === null) {
+      await prisma.postDocumentoHtml.deleteMany({ where: { postId: id } });
+    }
 
     await limparAnexosRemovidos(atual.anexos, midias.anexos);
     return { ok: true };  } catch (e) {

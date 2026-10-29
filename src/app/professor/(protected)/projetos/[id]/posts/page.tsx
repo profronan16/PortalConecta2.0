@@ -5,10 +5,10 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ChevronRight, FileText, Plus, Pencil, Trash2, Eye, EyeOff, ExternalLink,
-  ArrowLeft, Save, X,
+  ArrowLeft, Save, X, FileCode2, Type,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { listPosts, createPost, updatePost, deletePost, getProjetoParaConteudo } from '@/actions/professor';
+import { listPosts, createPost, updatePost, deletePost, getProjetoParaConteudo, getDocumentoHtmlDoPost } from '@/actions/professor';
 import { formatDateShort } from '@/lib/utils';
 import { Prisma } from '@prisma/client';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -16,6 +16,7 @@ import { RichTextEditor } from '@/components/ui/RichTextEditor';
 import { PostAnexosUploader } from '@/components/ui/PostAnexosUploader';
 import { SeletorDeCapaDoPost } from '@/components/ui/SeletorDeCapaDoPost';
 import { PostCapa } from '@/components/ui/PostCapa';
+import { DocumentoHtmlUploader, type DocumentoHtmlNoFormulario } from '@/components/ui/DocumentoHtmlUploader';
 import { useToast } from '@/components/ui/toast';
 import { enviarArquivo } from '@/lib/upload-midia';
 import { anexosDoJson, type MidiaDoPost } from '@/lib/post-midias';
@@ -24,7 +25,10 @@ import { usePesoDasImagensDoTexto } from '@/lib/use-peso-midias';
 
 const isConteudoVazio = (html: string) => html.replace(/<[^>]*>/g, '').trim().length === 0;
 
-type Post = Prisma.PostGetPayload<{}>;
+type Post = Prisma.PostGetPayload<{ include: { documentoHtml: { select: { nomeArquivo: true; bytes: true } } } }>;
+
+/** Como o conteúdo do post é feito: no editor de texto ou com um arquivo .html. */
+type ModoConteudo = 'editor' | 'html';
 
 export default function ProfessorPostsPage({ params }: { params: { id: string } }) {
   const { user, userRole } = useAuth();
@@ -47,6 +51,9 @@ export default function ProfessorPostsPage({ params }: { params: { id: string } 
     icone: null as ChaveIconePost | null,
     anexos: [] as MidiaDoPost[],
   });
+  const [modo, setModo] = useState<ModoConteudo>('editor');
+  const [documento, setDocumento] = useState<DocumentoHtmlNoFormulario | null>(null);
+  const [carregandoDocumento, setCarregandoDocumento] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deletePostId, setDeletePostId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -72,7 +79,15 @@ export default function ProfessorPostsPage({ params }: { params: { id: string } 
     setForm({ titulo: '', conteudo: '', resumo: '', status: 'RASCUNHO', imagemUrl: '', icone: null, anexos: [] });
     setEditingPost(null);
     setShowForm(false);
+    setModo('editor');
+    setDocumento(null);
     resetarPeso();
+  };
+
+  const recarregarPosts = async () => {
+    if (!user?.email) return;
+    const updated = await listPosts(params.id, user.email);
+    if (updated && 'data' in updated && Array.isArray(updated.data)) setPosts(updated.data);
   };
 
   const handleEdit = (post: Post) => {
@@ -89,15 +104,42 @@ export default function ProfessorPostsPage({ params }: { params: { id: string } 
     setShowForm(true);
     resetarPeso();
     void recalcularPesoDoTexto(post.conteudo);
+
+    setDocumento(null);
+    setModo(post.documentoHtml ? 'html' : 'editor');
+    // O documento não vem na lista (pode ter centenas de KB): é buscado só ao
+    // editar, para a pré-visualização.
+    if (post.documentoHtml && user?.email) {
+      setCarregandoDocumento(true);
+      getDocumentoHtmlDoPost(post.id, user.email)
+        .then((resultado) => {
+          if (!resultado.ok) toast(resultado.error, 'error');
+          else if (resultado.data) {
+            setDocumento({ html: resultado.data.html, nome: resultado.data.nomeArquivo, bytes: resultado.data.bytes, alterado: false });
+          }
+        })
+        .catch(() => toast('Não conseguimos carregar o documento HTML deste post.', 'error'))
+        .finally(() => setCarregandoDocumento(false));
+    }
   };
 
+  // No modo HTML o texto vem do arquivo; no editor, do que foi digitado.
+  const conteudoPronto = modo === 'html' ? !!documento : !isConteudoVazio(form.conteudo);
+
   const handleSave = async () => {
-    if (!user?.email || !form.titulo.trim() || isConteudoVazio(form.conteudo)) return;
+    if (!user?.email || !form.titulo.trim() || !conteudoPronto) return;
     setSaving(true);
     try {
+      // O documento só viaja quando foi escolhido agora. Voltar para o editor num
+      // post que tinha documento remove o documento (`null`).
+      const documentoHtml = modo === 'html'
+        ? (documento?.alterado ? { html: documento.html, nome: documento.nome } : undefined)
+        : (editingPost?.documentoHtml ? null : undefined);
+      const dados = { ...form, documentoHtml };
+
       const result = editingPost
-        ? await updatePost(editingPost.id, form, user.email)
-        : await createPost(params.id, form, user.email);
+        ? await updatePost(editingPost.id, dados, user.email)
+        : await createPost(params.id, dados, user.email);
 
       // O erro do servidor precisa aparecer: é ele que recusa o post acima de
       // 20 MB (a checagem da tela é só um aviso antecipado).
@@ -106,14 +148,8 @@ export default function ProfessorPostsPage({ params }: { params: { id: string } 
         return;
       }
 
-      if (editingPost) {
-        setPosts((prev) => prev.map((p) => p.id === editingPost.id ? { ...p, ...form } : p));
-        toast('Post atualizado.', 'success');
-      } else {
-        const updated = await listPosts(params.id, user.email);
-        if (updated && 'data' in updated && Array.isArray(updated.data)) setPosts(updated.data);
-        toast('Post publicado no projeto.', 'success');
-      }
+      await recarregarPosts();
+      toast(editingPost ? 'Post atualizado.' : 'Post publicado no projeto.', 'success');
       resetForm();
     } catch (e) {
       console.error(e);
@@ -219,6 +255,46 @@ export default function ProfessorPostsPage({ params }: { params: { id: string } 
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Conteúdo</label>
+                <div className="flex gap-2 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setModo('editor')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      modo === 'editor' ? 'bg-azul-eletrico text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <Type className="w-3.5 h-3.5" />
+                    Escrever no editor
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setModo('html')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      modo === 'html' ? 'bg-azul-eletrico text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    <FileCode2 className="w-3.5 h-3.5" />
+                    Enviar arquivo HTML
+                  </button>
+                </div>
+                {modo === 'html' ? (
+                  carregandoDocumento ? (
+                    <p className="text-sm text-gray-400 py-6 text-center">Carregando documento...</p>
+                  ) : (
+                    <>
+                      <DocumentoHtmlUploader
+                        documento={documento}
+                        onChange={setDocumento}
+                        onTituloSugerido={(titulo) => setForm((atual) => (atual.titulo.trim() ? atual : { ...atual, titulo: titulo.slice(0, 120) }))}
+                      />
+                      <p className="text-xs text-gray-400 mt-1">
+                        O post aparece no portal com a formatação do arquivo: cores, fontes, imagens e estilos.
+                        {editingPost?.documentoHtml ? ' Se voltar para o editor, o documento é removido ao salvar.' : ''}
+                      </p>
+                    </>
+                  )
+                ) : (
+                <>
                 <RichTextEditor
                   value={form.conteudo}
                   onChange={(html) => {
@@ -236,6 +312,8 @@ export default function ProfessorPostsPage({ params }: { params: { id: string } 
                 <p className="text-xs text-gray-400 mt-1">
                   Use o botão de imagem da barra para inserir imagens no meio do texto. Elas contam no limite de 20 MB do post.
                 </p>
+                </>
+                )}
               </div>
 
               <div>
@@ -277,7 +355,7 @@ export default function ProfessorPostsPage({ params }: { params: { id: string } 
               </button>
               <button
                 onClick={handleSave}
-                disabled={saving || !form.titulo.trim() || isConteudoVazio(form.conteudo)}
+                disabled={saving || carregandoDocumento || !form.titulo.trim() || !conteudoPronto}
                 className="flex items-center gap-2 px-4 py-2 bg-azul-eletrico text-white rounded-xl text-sm font-medium hover:bg-azul-eletrico/90 transition-colors disabled:opacity-50"
               >
                 <Save className="w-4 h-4" />
@@ -313,6 +391,15 @@ export default function ProfessorPostsPage({ params }: { params: { id: string } 
                     }`}>
                       {post.status === 'PUBLICADO' ? 'Publicado' : 'Rascunho'}
                     </span>
+                    {post.documentoHtml && (
+                      <span
+                        className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-azul-eletrico/10 text-azul-eletrico"
+                        title={post.documentoHtml.nomeArquivo ?? undefined}
+                      >
+                        <FileCode2 className="w-3 h-3" />
+                        HTML
+                      </span>
+                    )}
                   </div>
                   {post.resumo && <p className="text-gray-500 text-sm mb-2">{post.resumo}</p>}
                   <p className="text-gray-400 text-xs">
