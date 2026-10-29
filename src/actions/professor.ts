@@ -584,7 +584,13 @@ export async function updateMyProjeto(
     }
     if (permitido.coordenador !== undefined) update.coordenador = v.valor.coordenador ?? '';
     if (permitido.area !== undefined) update.area = v.valor.area ?? '';
-    if (permitido.status !== undefined) update.status = v.valor.status as Prisma.ProjetoUpdateInput['status'];
+    if (permitido.status !== undefined) {
+      update.status = v.valor.status as Prisma.ProjetoUpdateInput['status'];
+      // Só `INSCRICOES_ABERTAS` aceita inscrição (ver verificarInscricoesAbertas).
+      // Encerrar/suspender também baixa o indicador, senão a tela de gestão
+      // continuaria mostrando "Inscrições Abertas" num projeto encerrado.
+      if (v.valor.status !== 'INSCRICOES_ABERTAS') update.inscricoes_abertas = false;
+    }
     if (permitido.descricao !== undefined) update.descricao = v.valor.descricao;
     if (permitido.resumoCurto !== undefined) {
       const resumo = String(permitido.resumoCurto ?? '').trim();

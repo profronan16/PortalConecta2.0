@@ -279,7 +279,8 @@ export default function ProfessorProjetosPage() {
                     <span>
                       {AVISO_CAMPOS_SUAP}
                       <br />
-                      Você continua podendo editar descrição, cor, contatos, links e o formulário de inscrição.
+                      Você continua podendo editar o status (por exemplo, encerrar um projeto que o SUAP
+                      ainda mostra como ativo), a descrição, cor, contatos, links e o formulário de inscrição.
                     </span>
                   </div>
                 )}
@@ -304,12 +305,11 @@ export default function ProfessorProjetosPage() {
                       required={!estaBloqueado('area')}
                     />
                   </Field>
-                  <Field label="Status" required={!estaBloqueado('status')}>
+                  <Field label="Status" required>
                     <select
-                      className={`input-field ${estaBloqueado('status') ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
+                      className="input-field"
                       value={form.status}
                       onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as MyProjetoFormData['status'] }))}
-                      disabled={estaBloqueado('status')}
                     >
                       {STATUS_LIST.map((s) => <option key={s} value={s}>{getStatusLabel(s)}</option>)}
                     </select>

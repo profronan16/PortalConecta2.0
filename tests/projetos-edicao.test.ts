@@ -38,12 +38,12 @@ describe('projetoVemDoSuap', () => {
 
 describe('camposBloqueadosParaEdicao', () => {
   it('bloqueia os institucionais quando o projeto vem do SUAP', () => {
-    expect(camposBloqueadosParaEdicao({ suapId: 7 })).toEqual([
-      'nome',
-      'coordenador',
-      'area',
-      'status',
-    ]);
+    expect(camposBloqueadosParaEdicao({ suapId: 7 })).toEqual(['nome', 'coordenador', 'area']);
+  });
+
+  it('a situação (status) é do professor mesmo em projeto do SUAP: o SUAP demora a encerrar', () => {
+    expect(camposBloqueadosParaEdicao({ suapId: 7 })).not.toContain('status');
+    expect(CAMPOS_LIVRES_DO_PROFESSOR).toContain('status');
   });
 
   it('não bloqueia nada em projeto manual', () => {
@@ -61,13 +61,14 @@ describe('camposBloqueadosParaEdicao', () => {
 });
 
 describe('filtrarEdicaoProjeto', () => {
-  const bloqueados = ['nome', 'coordenador', 'area', 'status'];
+  const bloqueados = ['nome', 'coordenador', 'area'];
 
   it('mantém os campos livres e separa os bloqueados', () => {
     const { permitido, ignorados } = filtrarEdicaoProjeto(
       {
         nome: 'Nome novo',
         area: 'Pesquisa',
+        status: 'ENCERRADO',
         descricao: 'Descrição editada',
         corPrimaria: '#000000',
         instagram: '@projeto',
@@ -76,6 +77,7 @@ describe('filtrarEdicaoProjeto', () => {
     );
 
     expect(permitido).toEqual({
+      status: 'ENCERRADO',
       descricao: 'Descrição editada',
       corPrimaria: '#000000',
       instagram: '@projeto',
@@ -117,7 +119,7 @@ describe('filtrarEdicaoProjeto', () => {
 
 describe('descreverCamposIgnorados', () => {
   it('usa rótulos legíveis para a mensagem ao usuário', () => {
-    expect(descreverCamposIgnorados(['nome', 'status'])).toBe('Nome, Situação');
+    expect(descreverCamposIgnorados(['nome', 'area'])).toBe('Nome, Área');
   });
 
   it('degrada para o próprio nome do campo quando desconhecido', () => {

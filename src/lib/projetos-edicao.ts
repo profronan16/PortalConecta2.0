@@ -5,20 +5,27 @@ import type { Prisma } from '@prisma/client';
  * controlados").
  *
  * Regra: em projetos que vêm do SUAP, os campos INSTITUCIONAIS são somente
- * leitura no portal — quem manda neles é o SUAP (nome, coordenador, área e
- * situação). O professor continua dono da APRESENTAÇÃO do projeto: descrição,
- * cor, contatos, links e formulário de inscrição.
+ * leitura no portal — quem manda neles é o SUAP (nome, coordenador e área). O
+ * professor continua dono da APRESENTAÇÃO do projeto: descrição, cor,
+ * contatos, links e formulário de inscrição.
+ *
+ * A SITUAÇÃO (status) é do professor, mesmo em projeto do SUAP: o SUAP demora
+ * a marcar um projeto como encerrado, e sem isso o projeto ficava "em
+ * execução" no portal até o SUAP atualizar. Uma edição no portal não é
+ * desfeita pela importação seguinte: `foiEditadoAposSync` (suap-edicao-manual)
+ * preserva o registro, e a carga semanal só traz projetos novos.
  *
  * A checagem vive aqui (módulo puro, testável) e é aplicada no SERVIDOR em
  * `updateMyProjeto` — desabilitar o input na tela é conveniência, não segurança.
  */
 
-export const CAMPOS_CONTROLADOS_PELO_SUAP = ['nome', 'coordenador', 'area', 'status'] as const;
+export const CAMPOS_CONTROLADOS_PELO_SUAP = ['nome', 'coordenador', 'area'] as const;
 
 export type CampoControladoPeloSuap = (typeof CAMPOS_CONTROLADOS_PELO_SUAP)[number];
 
 /** Campos que o professor pode editar em qualquer projeto. */
 export const CAMPOS_LIVRES_DO_PROFESSOR = [
+  'status',
   'descricao',
   'corPrimaria',
   'logoUrl',
@@ -81,7 +88,7 @@ export function filtrarEdicaoProjeto<T extends Record<string, unknown>>(
 
 /** Texto exibido na tela e no retorno da Server Action. */
 export const AVISO_CAMPOS_SUAP =
-  'Nome, coordenador, área e situação vêm do SUAP e são somente leitura aqui. ' +
+  'Nome, coordenador e área vêm do SUAP e são somente leitura aqui. ' +
   'Para alterá-los, atualize o projeto no SUAP.';
 
 /** Nomes amigáveis para a mensagem de retorno. */
@@ -89,7 +96,6 @@ export const ROTULO_CAMPO: Record<CampoControladoPeloSuap, string> = {
   nome: 'Nome',
   coordenador: 'Coordenador',
   area: 'Área',
-  status: 'Situação',
 };
 
 export function descreverCamposIgnorados(campos: string[]): string {
