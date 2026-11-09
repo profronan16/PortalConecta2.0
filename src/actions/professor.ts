@@ -14,6 +14,7 @@ import { camposBloqueadosParaEdicao, deveRegenerarSlugDoProjeto, filtrarEdicaoPr
 import { criarNotificacao, notificarMudancaStatusInscricao } from '@/lib/notificacoes';
 import { getVerifiedServerSession } from '@/lib/session';
 import { rotuloRespostaAluno } from '@/lib/inscricao-aluno';
+import { criarComProtocolo } from '@/lib/protocolo-inscricao';
 import {
   acrescentarObservacao, decidirConvite, ehTipoDeConvite, MAXIMO_DE_RESULTADOS, MINIMO_DA_BUSCA,
   observacaoDoConvite, ROTULO_TIPO_DO_CONVITE, termoDeBuscaValido, vagaCombinaComOPapel,
@@ -958,13 +959,6 @@ export async function buscarEstudantesParaConvite(
   }
 }
 
-/** Protocolo no mesmo formato das inscrições feitas pelo estudante (PRJ-AAAA-NNNNNN). */
-async function gerarProtocoloDeConvite(): Promise<string> {
-  const ano = new Date().getFullYear();
-  const total = await prisma.inscricao.count({ where: { protocolo: { startsWith: `PRJ-${ano}-` } } });
-  return `PRJ-${ano}-${String(total + 1).padStart(6, '0')}`;
-}
-
 /**
  * A coordenação convida um estudante para a equipe do projeto.
  *
@@ -1070,27 +1064,31 @@ export async function convidarEstudante(
       inscricaoId = atualizada.id;
       protocolo = atualizada.protocolo;
     } else {
-      const criada = await prisma.inscricao.create({
-        data: {
-          ...resposta,
-          protocolo: await gerarProtocoloDeConvite(),
-          projeto_id: projetoId,
-          user_id: estudante.id,
-          nome_completo: nome,
-          email: estudante.email,
-          telefone: estudante.phone,
-          curso: estudante.curso,
-          turma: estudante.turma,
-          semestre: estudante.semestre,
-          matricula: estudante.matricula,
-          // Não houve formulário: o estudante não deu ciência das regras nem
-          // consentimento LGPD aqui, e o convite não finge que deu.
-          ciencia_regras: false,
-          consentimento_lgpd: false,
-          observacao_interna: observacao,
-        },
-        select: { id: true, protocolo: true },
-      });
+      // Protocolo novo a partir do maior já gravado, com nova tentativa se duas
+      // gravações simultâneas pegarem o mesmo número (ver lib/protocolo-inscricao).
+      const criada = await criarComProtocolo((numero) =>
+        prisma.inscricao.create({
+          data: {
+            ...resposta,
+            protocolo: numero,
+            projeto_id: projetoId,
+            user_id: estudante.id,
+            nome_completo: nome,
+            email: estudante.email,
+            telefone: estudante.phone,
+            curso: estudante.curso,
+            turma: estudante.turma,
+            semestre: estudante.semestre,
+            matricula: estudante.matricula,
+            // Não houve formulário: o estudante não deu ciência das regras nem
+            // consentimento LGPD aqui, e o convite não finge que deu.
+            ciencia_regras: false,
+            consentimento_lgpd: false,
+            observacao_interna: observacao,
+          },
+          select: { id: true, protocolo: true },
+        }),
+      );
       inscricaoId = criada.id;
       protocolo = criada.protocolo;
     }

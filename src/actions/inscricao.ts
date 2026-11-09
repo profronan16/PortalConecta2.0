@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
 import { enviarConfirmacaoInscricao } from '@/lib/email';
+import { gerarProtocoloDaInscricao } from '@/lib/protocolo-inscricao';
 import { rateLimitado, obterIpCliente } from '@/lib/rate-limit';
 import { verificarTurnstile } from '@/lib/turnstile';
 import { parsePerguntasExtra, validarRespostasExtraObrigatorias } from '@/lib/formulario-extra';
@@ -48,16 +49,9 @@ type ActionResult = { ok: true; data: { protocolo: string } } | { ok: false; err
 /**
  * Gera protocolo único: PRJ-YYYY-NNNNNN
  */
-async function gerarProtocolo(): Promise<string> {
-  const ano = new Date().getFullYear();
-  const count = await prisma.inscricao.count({
-    where: {
-      protocolo: { startsWith: `PRJ-${ano}-` },
-    },
-  });
-  const num = (count + 1).toString().padStart(6, '0');
-  return `PRJ-${ano}-${num}`;
-}
+// A partir do MAIOR protocolo do ano (e não da contagem, que repete número
+// quando alguma inscrição foi apagada): ver lib/protocolo-inscricao.ts.
+const gerarProtocolo = gerarProtocoloDaInscricao;
 
 /**
  * Verifica se o projeto aceita inscrições
