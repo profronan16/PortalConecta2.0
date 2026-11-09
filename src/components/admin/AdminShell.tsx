@@ -9,8 +9,10 @@ import {
   Newspaper, Users, LogOut, Menu, X, Sparkles, ChevronRight, RefreshCw,
   UserCircle, BarChart3, Trash2, Brain, ExternalLink,
 } from 'lucide-react';
+import { MessageSquareHeart } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { SeletorDeVisao } from '@/components/layout/SeletorDeVisao';
+import { contarFeedbacksNovos } from '@/actions/feedback';
 
 type NavItem = {
   href: string;
@@ -29,6 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/admin/projetos', label: 'Projetos',       icon: FolderOpen },
   { href: '/admin/agenda',   label: 'Agenda',         icon: Calendar },
   { href: '/admin/posts',    label: 'Posts',          icon: Newspaper },
+  { href: '/admin/feedbacks', label: 'Feedback',      icon: MessageSquareHeart },
   { href: '/admin/inscricoes', label: 'Inscrições',  icon: Users },
   { href: '/admin/relatorio', label: 'Relatórios',    icon: BarChart3 },
   { href: '/admin/rag',      label: 'RAG (IFizinha)', icon: Brain, masterOnly: true },
@@ -37,7 +40,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/admin/limpar-dados', label: 'Limpar Dados', icon: Trash2, masterOnly: true },
 ];
 
-function NavLink({ item, onClick }: { item: NavItem; onClick?: () => void }) {
+function NavLink({ item, onClick, badge = 0 }: { item: NavItem; onClick?: () => void; badge?: number }) {
   const pathname = usePathname();
   const isActive = pathname === item.href || (item.href !== '/admin' && pathname?.startsWith(item.href));
   const Icon = item.icon;
@@ -54,7 +57,15 @@ function NavLink({ item, onClick }: { item: NavItem; onClick?: () => void }) {
     >
       <Icon className="w-4 h-4 flex-shrink-0" />
       {item.label}
-      {isActive && <ChevronRight className="w-3.5 h-3.5 ml-auto" />}
+      {badge > 0 && (
+        <span
+          className="ml-auto rounded-full bg-dourado-500 px-2 py-0.5 text-[11px] font-black leading-none text-gray-900"
+          aria-label={`${badge} novas`}
+        >
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
+      {isActive && <ChevronRight className={`w-3.5 h-3.5 ${badge > 0 ? '' : 'ml-auto'}`} />}
     </Link>
   );
 }
@@ -66,6 +77,14 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const isLoginPage = pathname === '/admin/login';
+
+  // Mensagens de feedback ainda não lidas (selo no menu). Recontado a cada
+  // navegação, então marcar como lida na caixa de entrada já atualiza o selo.
+  const [feedbacksNovos, setFeedbacksNovos] = useState(0);
+  useEffect(() => {
+    if (isLoginPage || !user) return;
+    contarFeedbacksNovos().then(setFeedbacksNovos).catch(() => setFeedbacksNovos(0));
+  }, [pathname, isLoginPage, user]);
 
   useEffect(() => {
     if (!loading && !user && !isLoginPage) {
@@ -114,7 +133,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       {/* Nav */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
         {visibleNav.map((item) => (
-          <NavLink key={item.href} item={item} onClick={onNavClick} />
+          <NavLink
+            key={item.href}
+            item={item}
+            onClick={onNavClick}
+            badge={item.href === '/admin/feedbacks' ? feedbacksNovos : 0}
+          />
         ))}
       </nav>
 

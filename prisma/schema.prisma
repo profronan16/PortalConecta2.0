@@ -81,6 +81,7 @@ model User {
   alertasInteresse    AlertaInteresse[]
   favoritos           Favorito[]
   notificacoes        Notificacao[]
+  feedbacks           Feedback[]
   agendaPreferencia   AgendaPreferencia?
   editalResumoVersoes EditalResumoVersao[]
 }
@@ -726,6 +727,25 @@ model Notificacao {
 
   @@index([user_id])
   @@index([lida])
+}
+
+// Feedback dos visitantes sobre o site (página /feedback). Quem lê é o
+// Administrador Geral, em /admin/feedbacks. `user_id` é opcional: o envio é
+// aberto a quem não está logado.
+model Feedback {
+  id         String   @id @default(cuid())
+  tipo       String   // sugestao | problema | elogio | duvida | outro
+  mensagem   String   @db.Text
+  contato    String?  // e-mail para resposta, informado por quem enviou
+  pagina     String?  // caminho de onde a pessoa veio (sem query string)
+  user_id    String?
+  user       User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  status     String   @default("novo") // novo | lido | resolvido
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@index([status, created_at])
+  @@index([user_id])
 }
 
 // Log de uploads RAG
