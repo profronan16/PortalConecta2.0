@@ -29,7 +29,10 @@ export function lerEstadoChat(raw: unknown): ChatState | null {
 export function resolverPergunta(message: string, state: ChatState | null) {
   const p = normalizarPergunta(message);
   const continuation = /^(e\s+(os?|as?|quanto|quais|como|para|prazo|documentos|requisitos|valores)\b|qual (o prazo|a data)|quais (os )?(documentos|requisitos)|como (me )?inscrev|e\?|nesse|nessa|dele|dela)/.test(p) || /\b(esse edital|este edital|desse projeto|deste projeto|fonte\s*\d+)\b/.test(p);
-  if (!continuation) return { query: message, ids: [] as string[], clarify: false };
+  // Pergunta que já traz o próprio assunto (número de edital, nome entre aspas ou vários termos) não depende da conversa anterior.
+  const anaforico = /\b(esse edital|este edital|desse projeto|deste projeto|nesse|nessa|dele|dela|fonte\s*\d+)\b/.test(p);
+  const traz = /\bedital\s*(?:n[ºo°.]?\s*)?\d{1,5}\b/.test(p) || /["“][^"”]{3,}["”]/.test(message) || p.split(/\s+/).filter(w => w.replace(/[^a-z0-9]/g, '').length >= 5).length >= 4;
+  if (!continuation || (traz && !anaforico)) return { query: message, ids: [] as string[], clarify: false };
   if (!state) return { query: message, ids: [] as string[], clarify: true };
   if (state.ids.length > 1 && /\b(esse|este|desse|deste|dele|dela|fonte\s*\d+)\b/.test(p)) return { query: message, ids: [], clarify: true };
   return { query: `${state.query.split('\nPergunta de continuação:')[0]}\nPergunta de continuação: ${message}`.slice(0, 3000), ids: state.ids, clarify: false };

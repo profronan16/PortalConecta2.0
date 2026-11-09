@@ -40,6 +40,15 @@ describe('estado da conversa', () => {
     expect(resolved.query).toContain('edital 12/2026'); expect(resolved.ids).toEqual(['d1']);
   });
   it('continuação sem estado pede esclarecimento', () => expect(resolverPergunta('E o prazo?', null).clarify).toBe(true));
+  it('pergunta completa na primeira mensagem não pede esclarecimento', () => {
+    expect(resolverPergunta('Qual o prazo do edital 999/2030?', null)).toMatchObject({ clarify: false, ids: [] });
+    expect(resolverPergunta('Qual o prazo do edital de fluxo contínuo de extensão?', null).clarify).toBe(false);
+    expect(resolverPergunta('Qual o prazo do edital 12/2026?', { query: 'edital 5/2025', ids: ['d1'], expires: Date.now() + 1000 }).ids).toEqual([]);
+  });
+  it('pergunta anafórica ou curta continua dependendo da conversa', () => {
+    expect(resolverPergunta('Qual o prazo?', null).clarify).toBe(true);
+    expect(resolverPergunta('E os requisitos desse edital?', null).clarify).toBe(true);
+  });
   it('novo assunto não herda âncoras', () => expect(resolverPergunta('Qual o curso de agronomia?', { query: 'edital', ids: ['d1'], expires: 0 }).ids).toEqual([]));
 });
 describe('evidências e referências', () => {
