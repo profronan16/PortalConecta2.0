@@ -10,6 +10,7 @@ import {
   Pencil, Archive, RotateCcw,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { SafeHtml } from '@/components/ui/SafeHtml';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getProjetoDetalhes, listInscricoes, updateInscricaoStatus, exportInscricoesCSV, toggleInscricoes, abrirInscricoes,
@@ -406,7 +407,10 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
         </div>
 
         <div className="p-6">
-          <p className="text-gray-600 text-sm leading-relaxed mb-4">{projeto.descricao}</p>
+          <SafeHtml
+            html={projeto.descricao}
+            className="prose prose-sm max-w-none text-gray-600 leading-relaxed mb-4 prose-p:text-gray-600"
+          />
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
