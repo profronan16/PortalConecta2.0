@@ -21,7 +21,7 @@
 
 import type { ChunkSearchResult } from '@/lib/busca-vetorial';
 
-export type TipoFonte = 'documento' | 'projeto' | 'edital';
+export type TipoFonte = 'documento' | 'projeto' | 'edital' | 'agenda';
 
 export interface FonteResposta {
   /** Número que aparece no texto da resposta (`[1]`, `[2]`...). */

@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { buscarContextoChat } from '@/lib/chat-context';
 import { criarEstadoChat, lerEstadoChat, resolverPergunta, limparCitacoes, dataCivilAtual } from '@/lib/chat-policy';
 import { filtrarFontesCitadas } from '@/lib/fontes-resposta';
+import { garantirLinksNaResposta } from '@/lib/chat-atualidade';
 import { generateCompletion, type LlmMessage } from '@/lib/llm';
 import { reservarAtendimento, AiLimitError } from '@/lib/ai-guard';
 import { createLogger } from '@/lib/logger';
@@ -40,9 +41,12 @@ REGRAS INEGOCIÁVEIS:
 - Diferencie total filtrado de itens mostrados. Nunca diga lista completa quando houver recorte. Use contagens do filtro correspondente, não totais globais para perguntas específicas.
 - Não transforme estado de inscrição ou documento antigo em garantia de prazo vigente. Hoje em Brasília é ${dataCivilAtual()}.
 - Se houver conflito de versões ou prazos, explicite a divergência e oriente conferir o documento oficial; não escolha um valor sem evidência.
+ATUALIDADE: priorize sempre a informação mais atual. Quando houver fontes de anos diferentes sobre o mesmo assunto, use a mais recente e diga que há documentos antigos. Toda fonte marcada como ANTIGO (ou sem ano informado) só pode ser usada com um aviso claro, por exemplo: "Este documento é de 2020; as regras podem ter mudado, confira no site oficial".
+LINKS: sempre indique o link das fontes usadas, escrevendo a URL em Markdown, como [título](URL). Use somente URLs que aparecem nas evidências (no campo "Link:" ou dentro do texto do trecho); nunca invente nem complete uma URL. Quando perguntarem onde encontrar um documento, modelo, formulário ou edital, responda de forma direta com o link, por exemplo: "O modelo de relatório pode ser acessado no link: URL". Se o texto do trecho trouxer o endereço do próprio documento pedido, entregue esse endereço e também o "Link:" da página; se só houver "Link:", entregue esse. Se houver "Documento original:", ofereça também esse link.
+PROJETOS, EDITAIS E AGENDA: responda com os projetos, editais e eventos da Agenda presentes nas evidências (a Agenda cobre 2026 em diante). Priorize os abertos. Só apresente encerrados quando a evidência indicar que não há abertos (escopo "encerrados"), e então diga isso. Ao falar de eventos, informe a data e o link da Agenda.
 - Textos de tabela reformulados ou resumos não autorizam acrescentar informações ao original.
 - Use Markdown, parágrafos curtos e listas. Para listas longas, apresente o recorte indicado e o caminho para consultar os demais.
-COMO CITAR AS FONTES: use [1], [2] etc. após a afirmação, com os números atuais. Não invente URL. A interface oferece os links.`;
+COMO CITAR AS FONTES: use [1], [2] etc. após a afirmação, com os números atuais. Não invente URL; use apenas os links presentes nas evidências.`;
     const history: LlmMessage[] = Array.isArray(body.history) ? body.history.slice(-6).filter((item: any) => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string').map((item: any) => ({ role: item.role, content: item.content.slice(0, 1000).replace(/\[\d+\]/g, '') })) : [];
     let provider: unknown;
     const messages: LlmMessage[] = [
@@ -52,7 +56,8 @@ COMO CITAR AS FONTES: use [1], [2] etc. após a afirmação, com os números atu
     while (Buffer.byteLength(JSON.stringify(messages)) > 32000 && messages.length > 2) messages.splice(1, 1);
     if (Buffer.byteLength(JSON.stringify(messages)) > 32000) throw new Error('Orçamento de contexto excedido');
     const rawReply = await generateCompletion(messages, { temperature: 0.2, maxTokens: 2600, timeoutMs: 30_000, attempts: 1, signal, onResult: info => { provider = info; } });
-    const reply = limparCitacoes(rawReply, result.fontes.map(f => f.numero));
+    // Documento pedido pelo nome: o link tem de estar no texto, mesmo que o modelo o esqueça.
+    const reply = garantirLinksNaResposta(limparCitacoes(rawReply, result.fontes.map(f => f.numero)), result.solicitados);
     const fontes = filtrarFontesCitadas(reply, result.fontes);
     const cited = /\[\d+\]/.test(reply);
     const state = criarEstadoChat(resolved.query, fontes.flatMap(f => f.documentoId ? [f.documentoId] : []));

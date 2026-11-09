@@ -42,7 +42,9 @@ describe('recuperação e filtros', () => {
   });
   it('tema sem resultado não provoca remoção de filtros', async () => {
     await buscarContextoChat('projetos de robótica');
-    expect(mock.prisma.projeto.count.mock.calls[0][0].where.AND).toHaveLength(1);
+    // Sem aberto: tenta abertos, em andamento e encerrados, sempre com o filtro de tema; nunca amplia sem o tema.
+    for (const [{ where }] of mock.prisma.projeto.count.mock.calls) expect(where.AND.some((c: { OR?: unknown[] }) => c.OR && c.OR.length > 2)).toBe(true);
+    expect(mock.prisma.projeto.count.mock.calls.at(-1)![0].where.AND).toHaveLength(1);
     expect(mock.prisma.projeto.findMany).toHaveBeenCalledTimes(2); // nomes + lista, sem retry ampliado
   });
   it('não confunde artes com parte de outra palavra', () => expect(interpretarConsulta('projetos participantes').themes).toEqual([]));
@@ -58,7 +60,7 @@ describe('recuperação e filtros', () => {
   });
   it('não transforma pesquisa existem em nome de projeto', async () => {
     await buscarContextoChat('Quantos projetos de pesquisa existem?');
-    const { where } = mock.prisma.projeto.count.mock.calls[0][0];
+    const { where } = mock.prisma.projeto.count.mock.calls.at(-1)![0]; // sem aberto, o último recorte é o do filtro puro
     expect(where.tipo.contains).toBe('pesquisa'); expect(where.AND).toBeUndefined();
   });
 });
