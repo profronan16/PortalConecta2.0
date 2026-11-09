@@ -121,6 +121,7 @@ export function EquipeEFinanciamentoDoProjeto({
               projetoId={convite.projetoId}
               userEmail={convite.userEmail}
               onAlterada={convite.onConvidado}
+              versao={equipe}
             />
           )}
         </>

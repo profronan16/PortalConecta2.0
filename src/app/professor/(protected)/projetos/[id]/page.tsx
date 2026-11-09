@@ -7,16 +7,14 @@ import {
   ChevronRight, Users, FolderOpen, Calendar, Mail,
   Download, Search, Filter, AlertCircle, CheckCircle,
   Clock, XCircle, Eye, ArrowLeft, FileText, Plus, Trash2, Briefcase, Loader2, ExternalLink,
-  ShieldCheck, UserPlus, Pencil, Archive, RotateCcw,
+  Pencil, Archive, RotateCcw,
 } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getProjetoDetalhes, listInscricoes, updateInscricaoStatus, exportInscricoesCSV, toggleInscricoes, abrirInscricoes,
   listVagas, createVaga, updateVaga, deleteVaga, type VagaFormData,
-  listarGestoresDaPagina, listarCandidatosAGestor, definirGestorDaPagina,
   getEquipeDoProjeto, salvarEquipeEFinanciamento, alterarEncerramentoDoProjeto,
-  type GestorDaPagina, type CandidatoAGestor,
 } from '@/actions/professor';
 import {
   EquipeEFinanciamentoDoProjeto,
@@ -50,10 +48,6 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
   const [editingVaga, setEditingVaga] = useState<Vaga | null>(null);
   const [showAbrirModal, setShowAbrirModal] = useState(false);
   const [togglingInscricoes, setTogglingInscricoes] = useState(false);
-  const [gestores, setGestores] = useState<GestorDaPagina[]>([]);
-  const [candidatos, setCandidatos] = useState<CandidatoAGestor[]>([]);
-  const [novoGestor, setNovoGestor] = useState('');
-  const [salvandoGestor, setSalvandoGestor] = useState(false);
   // Mudança de status fica "em rascunho" até o professor clicar em Confirmar.
   // É o que evita o aluno receber uma notificação a cada troca no select.
   const [pendingStatus, setPendingStatus] = useState<Record<string, string>>({});
@@ -88,44 +82,6 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
     setSalvandoEquipe(false);
   };
 
-  const recarregarGestores = async () => {
-    if (!user?.email) return;
-    const [g, c] = await Promise.all([
-      listarGestoresDaPagina(params.id, user.email),
-      listarCandidatosAGestor(params.id, user.email),
-    ]);
-    if (g.ok) setGestores(g.data);
-    if (c.ok) setCandidatos(c.data);
-  };
-
-  const adicionarGestor = async () => {
-    if (!user?.email || !novoGestor) return;
-    setSalvandoGestor(true);
-    const r = await definirGestorDaPagina(params.id, novoGestor, true, user.email);
-    if (r.ok) {
-      toast('Aluno nomeado gestor da página', 'success');
-      setNovoGestor('');
-      await recarregarGestores();
-    } else {
-      toast(r.error, 'error');
-    }
-    setSalvandoGestor(false);
-  };
-
-  const removerGestor = async (userId: string, nome: string) => {
-    if (!user?.email) return;
-    if (!confirm(`Remover ${nome} como gestor da página deste projeto?`)) return;
-    setSalvandoGestor(true);
-    const r = await definirGestorDaPagina(params.id, userId, false, user.email);
-    if (r.ok) {
-      toast('Gestor removido', 'success');
-      await recarregarGestores();
-    } else {
-      toast(r.error, 'error');
-    }
-    setSalvandoGestor(false);
-  };
-
   const recarregarVagas = async () => {
     if (!user?.email) return;
     const result = await listVagas(params.id, user.email);
@@ -148,7 +104,6 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
           viceCoordenadorEmail: p.viceCoordenadorEmail ?? '',
         });
         void recarregarEquipe().catch(console.error);
-        void recarregarGestores().catch(console.error);
         return Promise.all([
           listInscricoes(params.id, user.email!),
           listVagas(params.id, user.email!),
@@ -233,9 +188,6 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
         `Alteração confirmada: "${getStatusLabel(newStatus)}". O aluno será notificado.`,
         'success',
       );
-      // Um aluno recém-selecionado passa a aparecer na lista de candidatos a
-      // gestor da página sem precisar recarregar o painel.
-      void recarregarGestores().catch(console.error);
       void recarregarEquipe().catch(console.error);
     } else {
       toast(result.error || 'Não conseguimos alterar o status desta inscrição. Tente novamente.', 'error');
@@ -487,7 +439,7 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
             valores={dadosEquipe}
             onChange={(alteracao) => setDadosEquipe((atual) => ({ ...atual, ...alteracao }))}
             equipe={equipe}
-            convite={user?.email ? { projetoId: params.id, userEmail: user.email, onConvidado: () => { void recarregarEquipe(); void recarregarGestores().catch(console.error); } } : undefined}
+            convite={user?.email ? { projetoId: params.id, userEmail: user.email, onConvidado: recarregarEquipe } : undefined}
           />
           <div className="flex justify-end">
             <button
@@ -500,78 +452,6 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
               {salvandoEquipe ? 'Salvando...' : 'Salvar vice e financiamento'}
             </button>
           </div>
-        </div>
-      </div>
-
-      {/* Gestores da página */}
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-50">
-          <h2 className="font-bold text-gray-900 flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-azul-eletrico" />
-            Gestores da página ({gestores.length})
-          </h2>
-          <p className="text-xs text-gray-500 mt-1">
-            Alunos bolsistas ou voluntários selecionados neste projeto que podem editar os posts
-            e a apresentação pública da página. Eles <strong>não</strong> podem alterar dados
-            sensíveis, abrir vagas, ver inscrições ou excluir o projeto.
-          </p>
-        </div>
-
-        <div className="p-5 space-y-4">
-          {gestores.length === 0 ? (
-            <p className="text-sm text-gray-500">
-              Nenhum aluno é gestor da página ainda.
-            </p>
-          ) : (
-            <div className="divide-y divide-gray-50 rounded-xl border border-gray-100">
-              {gestores.map((g) => (
-                <div key={g.userId} className="flex items-center justify-between gap-3 px-4 py-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{g.nome}</p>
-                    <p className="text-xs text-gray-500 truncate">{g.email}</p>
-                  </div>
-                  <button
-                    onClick={() => removerGestor(g.userId, g.nome)}
-                    disabled={salvandoGestor}
-                    className="flex-shrink-0 px-3 py-1.5 rounded-lg border border-gray-200 text-xs text-gray-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-60 transition-colors"
-                  >
-                    Remover
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {candidatos.filter((c) => !c.jaEhGestor).length > 0 ? (
-            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-              <select
-                value={novoGestor}
-                onChange={(e) => setNovoGestor(e.target.value)}
-                className="input-field flex-1"
-              >
-                <option value="">Selecione um aluno selecionado...</option>
-                {candidatos.filter((c) => !c.jaEhGestor).map((c) => (
-                  <option key={c.userId} value={c.userId}>
-                    {c.nome} — {c.tipoInteresse === 'AMBOS' ? 'Bolsista/Voluntário' : c.tipoInteresse === 'BOLSISTA' ? 'Bolsista' : 'Voluntário'}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={adicionarGestor}
-                disabled={!novoGestor || salvandoGestor}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-azul-eletrico text-white text-sm font-semibold hover:bg-azul-eletrico/90 disabled:opacity-50 transition-colors"
-              >
-                {salvandoGestor ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                Nomear gestor
-              </button>
-            </div>
-          ) : (
-            <p className="text-xs text-gray-500">
-              {candidatos.length === 0
-                ? 'Nenhum aluno selecionado com conta no portal ainda. Marque um candidato como “selecionado” para poder nomeá-lo.'
-                : 'Todos os alunos selecionados já são gestores da página.'}
-            </p>
-          )}
         </div>
       </div>
 

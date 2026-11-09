@@ -24,11 +24,18 @@ export function GerenciarEquipeDoProjeto({
   projetoId,
   userEmail,
   onAlterada,
+  versao,
 }: {
   projetoId: string;
   userEmail: string;
   /** Chamado quando a equipe mudou (convite, remoção, gestor): a tela recarrega o que depende dela. */
   onAlterada?: () => void;
+  /**
+   * Qualquer valor que mude quando a equipe da tela é recarregada (ex.: o próprio
+   * objeto `equipe`): a lista busca de novo, e a mudança de situação de uma
+   * inscrição feita em outro ponto da tela aparece aqui.
+   */
+  versao?: unknown;
 }) {
   const [membros, setMembros] = useState<MembroParaGestao[] | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
@@ -43,11 +50,13 @@ export function GerenciarEquipeDoProjeto({
 
   useEffect(() => {
     void recarregar();
-  }, [recarregar]);
+  }, [recarregar, versao]);
 
+  // A tela que nos usa recarrega a equipe e isso (via `versao`) refaz a lista;
+  // sem ela, recarregamos aqui mesmo.
   const aposMudanca = async () => {
-    await recarregar();
-    onAlterada?.();
+    if (onAlterada) onAlterada();
+    else await recarregar();
   };
 
   const alternarGestor = async (m: MembroParaGestao) => {
@@ -117,7 +126,7 @@ export function GerenciarEquipeDoProjeto({
                       Gestor da página
                     </span>
                   )}
-                  {!m.aguardando && m.userId && (
+                  {(!m.aguardando || m.gestor) && m.userId && (
                     <button
                       type="button"
                       onClick={() => alternarGestor(m)}
