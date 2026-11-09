@@ -110,7 +110,7 @@ export function inscricaoEstaNaEquipe(inscricao: Pick<InscricaoDaEquipe, 'status
  * selecionado); sem vaga vale o que ele marcou na inscrição. Se continuar
  * "AMBOS", entra como voluntário — não há bolsa garantida para ele.
  */
-function papelNaEquipe(inscricao: InscricaoDaEquipe): 'bolsista' | 'voluntario' {
+export function papelNaEquipe(inscricao: InscricaoDaEquipe): 'bolsista' | 'voluntario' {
   const tipoDaVaga = inscricao.vaga?.tipo;
   const tipo =
     tipoDaVaga && tipoDaVaga !== 'AMBOS' ? tipoDaVaga : inscricao.tipo_interesse;

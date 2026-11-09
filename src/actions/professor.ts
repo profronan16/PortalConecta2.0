@@ -17,12 +17,12 @@ import { rotuloRespostaAluno } from '@/lib/inscricao-aluno';
 import { criarComProtocolo } from '@/lib/protocolo-inscricao';
 import {
   acrescentarObservacao, decidirConvite, ehTipoDeConvite, MAXIMO_DE_RESULTADOS, MINIMO_DA_BUSCA,
-  observacaoDoConvite, ROTULO_TIPO_DO_CONVITE, termoDeBuscaValido, vagaCombinaComOPapel,
+  destinoAoRemoverDaEquipe, observacaoDoConvite, ROTULO_TIPO_DO_CONVITE, termoDeBuscaValido, vagaCombinaComOPapel,
 } from '@/lib/convite-estudante';
 import { mensagemVagaLotada } from '@/lib/vagas';
 import { limparAnexosRemovidos, validarMidiasDoPost } from '@/lib/post-midias-server';
 import { chaveDeIconeValida, erroDeUrlDeCapa } from '@/lib/post-capa';
-import { normalizarFinanciamento, normalizarViceCoordenacao, type EquipeDoProjeto } from '@/lib/projetos-equipe';
+import { normalizarFinanciamento, normalizarViceCoordenacao, papelNaEquipe, type EquipeDoProjeto } from '@/lib/projetos-equipe';
 import { buscarEquipeDoProjeto } from '@/lib/projetos-equipe-db';
 import { validarDocumentoHtml, type DocumentoHtmlRecebido } from '@/lib/post-documento-html';
 import { chaveDoDiaBrasil, fimDoDiaBrasil, inicioDoDiaBrasil, parseDataDoFormulario, formatarDataBrasil } from '@/lib/datas';
@@ -396,6 +396,33 @@ export async function listarCandidatosAGestor(projetoId: string, userEmail: stri
 }
 
 /**
+ * Grava o cargo de gestor da página e avisa o aluno. Quem chama já conferiu a
+ * permissão de quem concede e que o aluno está selecionado no projeto.
+ */
+async function concederGestorDaPagina(
+  projetoId: string,
+  projetoNome: string,
+  alunoId: string,
+  concedidoPor: string | null,
+): Promise<void> {
+  const permission = permissaoDeGestor(projetoId);
+  await prisma.userPermission.upsert({
+    where: { user_id_permission: { user_id: alunoId, permission } },
+    update: { granted_by: concedidoPor },
+    create: { user_id: alunoId, permission, granted_by: concedidoPor },
+  });
+
+  await criarNotificacao({
+    userId: alunoId,
+    titulo: `Você agora é gestor da página de "${projetoNome}"`,
+    texto:
+      'Você pode editar os posts e a apresentação da página do projeto. ' +
+      'Vagas, inscrições e dados institucionais continuam com a coordenação.',
+    link: `/professor/projetos/${projetoId}/pagina`,
+  }).catch(console.error);
+}
+
+/**
  * Concede/remove o cargo de gestor da página.
  * Exige coordenador/vice/admin e que o aluno esteja SELECIONADO no projeto.
  */
@@ -433,20 +460,7 @@ export async function definirGestorDaPagina(
         };
       }
 
-      await prisma.userPermission.upsert({
-        where: { user_id_permission: { user_id: targetUserId, permission } },
-        update: { granted_by: autor?.id ?? null },
-        create: { user_id: targetUserId, permission, granted_by: autor?.id ?? null },
-      });
-
-      await criarNotificacao({
-        userId: targetUserId,
-        titulo: `Você agora é gestor da página de "${projeto.nome}"`,
-        texto:
-          'Você pode editar os posts e a apresentação da página do projeto. ' +
-          'Vagas, inscrições e dados institucionais continuam com a coordenação.',
-        link: `/professor/projetos/${projetoId}/pagina`,
-      }).catch(console.error);
+      await concederGestorDaPagina(projetoId, projeto.nome, targetUserId, autor?.id ?? null);
     } else {
       await prisma.userPermission.deleteMany({
         where: { user_id: targetUserId, permission },
@@ -970,9 +984,9 @@ export async function buscarEstudantesParaConvite(
  */
 export async function convidarEstudante(
   projetoId: string,
-  dados: { userId: string; tipo: string; pedirConfirmacao: boolean },
+  dados: { userId: string; tipo: string; pedirConfirmacao: boolean; tornarGestor?: boolean },
   userEmail: string,
-): Promise<ActionResult<{ nome: string; aguardandoConfirmacao: boolean }>> {
+): Promise<ActionResult<{ nome: string; aguardandoConfirmacao: boolean; gestor: boolean }>> {
   try {
     if (!(await temAcessoAoProjeto(projetoId, userEmail))) {
       return { ok: false, error: MENSAGENS.semPermissaoCoordenador };
@@ -1093,6 +1107,16 @@ export async function convidarEstudante(
       protocolo = criada.protocolo;
     }
 
+    // Cargo de gestor da página junto com o convite: só quando o estudante já
+    // entra direto na equipe (convite que espera resposta ainda não é equipe).
+    // Falha aqui não desfaz o convite, que já está gravado.
+    let gestor = false;
+    if (dados.tornarGestor === true && !pedirConfirmacao) {
+      gestor = await concederGestorDaPagina(projetoId, projeto.nome, estudante.id, coordenador?.id ?? null)
+        .then(() => true)
+        .catch((e) => { console.error(e); return false; });
+    }
+
     // Efeitos colaterais DEPOIS da gravação, sem poder derrubar a ação (mesmo
     // padrão de `updateInscricaoStatus`).
     void Promise.resolve()
@@ -1141,7 +1165,162 @@ export async function convidarEstudante(
       )
       .catch(console.error);
 
-    return { ok: true, data: { nome, aguardandoConfirmacao: pedirConfirmacao } };
+    return { ok: true, data: { nome, aguardandoConfirmacao: pedirConfirmacao, gestor } };
+  } catch (e) {
+    return { ok: false, error: translatePrismaError(e) };
+  }
+}
+
+export type MembroParaGestao = {
+  inscricaoId: string;
+  userId: string | null;
+  nome: string;
+  email: string;
+  papel: 'bolsista' | 'voluntario';
+  /** Convite que ainda espera a resposta do estudante (ainda não é equipe). */
+  aguardando: boolean;
+  gestor: boolean;
+};
+
+/**
+ * Quem está na equipe ou tem convite aguardando resposta, com o que a
+ * coordenação pode fazer em cada um (cancelar/remover, cargo de gestor).
+ * Só coordenação/admin: expõe e-mail de estudantes.
+ */
+export async function listarEquipeParaGestao(
+  projetoId: string,
+  userEmail: string,
+): Promise<ActionResult<MembroParaGestao[]>> {
+  try {
+    if (!(await temAcessoAoProjeto(projetoId, userEmail))) {
+      return { ok: false, error: MENSAGENS.semPermissaoCoordenador };
+    }
+    const [inscricoes, permissoes] = await Promise.all([
+      prisma.inscricao.findMany({
+        where: { projeto_id: projetoId, status: 'selecionado' },
+        orderBy: { nome_completo: 'asc' },
+        select: {
+          id: true, user_id: true, nome_completo: true, email: true,
+          resposta_aluno: true, tipo_interesse: true, vaga: { select: { tipo: true } },
+        },
+      }),
+      prisma.userPermission.findMany({
+        where: { permission: permissaoDeGestor(projetoId) },
+        select: { user_id: true },
+      }),
+    ]);
+    const gestores = new Set(permissoes.map((p) => p.user_id));
+
+    return {
+      ok: true,
+      data: inscricoes.map((i) => ({
+        inscricaoId: i.id,
+        userId: i.user_id,
+        nome: i.nome_completo,
+        email: i.email,
+        papel: papelNaEquipe({
+          nome_completo: i.nome_completo,
+          status: 'selecionado',
+          resposta_aluno: i.resposta_aluno,
+          tipo_interesse: i.tipo_interesse,
+          vaga: i.vaga,
+        }),
+        aguardando: i.resposta_aluno !== 'aceito',
+        gestor: !!i.user_id && gestores.has(i.user_id),
+      })),
+    };
+  } catch (e) {
+    return { ok: false, error: translatePrismaError(e) };
+  }
+}
+
+/**
+ * Cancela um convite aguardando resposta ou tira um estudante da equipe.
+ * Regra do destino da inscrição em `destinoAoRemoverDaEquipe`. Tira também o
+ * cargo de gestor da página e avisa o estudante no portal.
+ */
+export async function removerDaEquipe(
+  projetoId: string,
+  inscricaoId: string,
+  userEmail: string,
+): Promise<ActionResult<{ nome: string; cancelouConvite: boolean }>> {
+  try {
+    if (!(await temAcessoAoProjeto(projetoId, userEmail))) {
+      return { ok: false, error: MENSAGENS.semPermissaoCoordenador };
+    }
+
+    // `projeto_id` na busca: o id da inscrição vem do cliente e não pode servir
+    // para mexer numa inscrição de outro projeto.
+    const [inscricao, projeto, coordenador] = await Promise.all([
+      prisma.inscricao.findFirst({
+        where: { id: String(inscricaoId ?? ''), projeto_id: projetoId },
+        select: {
+          id: true, protocolo: true, status: true, user_id: true, nome_completo: true,
+          resposta_aluno: true, observacao_interna: true, justificativa: true,
+          ciencia_regras: true, consentimento_lgpd: true,
+        },
+      }),
+      prisma.projeto.findUnique({ where: { id: projetoId }, select: { nome: true } }),
+      prisma.user.findUnique({ where: { email: userEmail }, select: { id: true } }),
+    ]);
+    if (!inscricao || !projeto || inscricao.status !== 'selecionado') {
+      return { ok: false, error: 'Não encontramos este estudante na equipe. A lista pode ter sido alterada por outra pessoa.' };
+    }
+
+    const cancelouConvite = inscricao.resposta_aluno !== 'aceito';
+    const destino = destinoAoRemoverDaEquipe(inscricao);
+    if (destino.acao === 'excluir') {
+      await prisma.inscricao.delete({ where: { id: inscricao.id } });
+    } else {
+      await prisma.inscricao.update({
+        where: { id: inscricao.id },
+        data: {
+          status: destino.status,
+          resposta_aluno: null,
+          respondido_em: null,
+          observacao_interna: acrescentarObservacao(
+            inscricao.observacao_interna,
+            `${cancelouConvite ? 'Convite cancelado' : 'Removido(a) da equipe'} pela coordenação em ${formatarDataBrasil(new Date(), { day: '2-digit', month: '2-digit', year: 'numeric' })} por ${userEmail}.`,
+          ),
+        },
+      });
+    }
+
+    // Sem equipe, sem cargo de gestor da página.
+    if (inscricao.user_id) {
+      await prisma.userPermission
+        .deleteMany({ where: { user_id: inscricao.user_id, permission: permissaoDeGestor(projetoId) } })
+        .catch(console.error);
+    }
+
+    void sincronizarProjetoSintetico(projetoId).catch(console.error);
+    void Promise.resolve()
+      .then(() =>
+        prisma.auditLog.create({
+          data: {
+            user_id: coordenador?.id ?? null,
+            acao: cancelouConvite ? 'convite_cancelado' : 'estudante_removido_da_equipe',
+            entidade: 'inscricao',
+            entidade_id: inscricao.id,
+            detalhes: { protocolo: inscricao.protocolo, projeto: projeto.nome, destino: destino.acao },
+          },
+        }),
+      )
+      .catch(console.error);
+    if (inscricao.user_id) {
+      void criarNotificacao({
+        userId: inscricao.user_id,
+        titulo: cancelouConvite
+          ? `Convite cancelado em "${projeto.nome}"`
+          : `Você saiu da equipe de "${projeto.nome}"`,
+        texto: cancelouConvite
+          ? 'A coordenação cancelou o convite para este projeto.'
+          : 'A coordenação removeu você da equipe deste projeto.',
+        link: '/meus-dados',
+      }).catch(console.error);
+    }
+
+    return { ok: true, data: { nome: inscricao.nome_completo, cancelouConvite } };
   } catch (e) {
     return { ok: false, error: translatePrismaError(e) };
   }

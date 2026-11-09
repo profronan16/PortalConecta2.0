@@ -110,3 +110,36 @@ describe('observação do convite', () => {
     expect(acrescentarObservacao(null, 'novo')).toBe('novo');
   });
 });
+
+import { destinoAoRemoverDaEquipe, ehConviteSemHistorico } from '@/lib/convite-estudante';
+
+describe('destinoAoRemoverDaEquipe', () => {
+  const soConvite = {
+    resposta_aluno: null,
+    observacao_interna: 'Convite da coordenação (Voluntário) em 09/11/2026 por a@b: aguardando confirmação do estudante.',
+    justificativa: null,
+    ciencia_regras: false,
+    consentimento_lgpd: false,
+  };
+
+  it('inscrição que só existe pelo convite é apagada (convite pendente ou aceito direto)', () => {
+    expect(destinoAoRemoverDaEquipe(soConvite)).toEqual({ acao: 'excluir' });
+    expect(destinoAoRemoverDaEquipe({ ...soConvite, resposta_aluno: 'aceito' })).toEqual({ acao: 'excluir' });
+  });
+
+  it('quem se inscreveu de verdade nunca é apagado', () => {
+    const real = { ...soConvite, observacao_interna: null, justificativa: 'quero participar', ciencia_regras: true, consentimento_lgpd: true };
+    expect(ehConviteSemHistorico(real)).toBe(false);
+    expect(destinoAoRemoverDaEquipe(real)).toEqual({ acao: 'mudar_status', status: 'em_analise' });
+    expect(destinoAoRemoverDaEquipe({ ...real, resposta_aluno: 'aceito' })).toEqual({
+      acao: 'mudar_status',
+      status: 'nao_selecionado',
+    });
+  });
+
+  it('convite com histórico (reconvite, anotação a mais) é preservado', () => {
+    expect(
+      ehConviteSemHistorico({ ...soConvite, observacao_interna: `${soConvite.observacao_interna}\nOutra anotação.` }),
+    ).toBe(false);
+  });
+});

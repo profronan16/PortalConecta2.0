@@ -487,7 +487,7 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
             valores={dadosEquipe}
             onChange={(alteracao) => setDadosEquipe((atual) => ({ ...atual, ...alteracao }))}
             equipe={equipe}
-            convite={user?.email ? { projetoId: params.id, userEmail: user.email, onConvidado: recarregarEquipe } : undefined}
+            convite={user?.email ? { projetoId: params.id, userEmail: user.email, onConvidado: () => { void recarregarEquipe(); void recarregarGestores().catch(console.error); } } : undefined}
           />
           <div className="flex justify-end">
             <button

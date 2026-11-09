@@ -43,6 +43,7 @@ export function ConvidarEstudanteDoProjeto({
   const [escolhido, setEscolhido] = useState<EstudanteBuscado | null>(null);
   const [tipo, setTipo] = useState<TipoDoConvite>('VOLUNTARIO');
   const [pedirConfirmacao, setPedirConfirmacao] = useState(true);
+  const [tornarGestor, setTornarGestor] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [mensagem, setMensagem] = useState<{ texto: string; erro: boolean } | null>(null);
   // Só a busca mais recente pode atualizar a lista (digitar rápido dispara várias).
@@ -80,6 +81,7 @@ export function ConvidarEstudanteDoProjeto({
     setResultados(null);
     setEscolhido(null);
     setPedirConfirmacao(true);
+    setTornarGestor(false);
     setTipo('VOLUNTARIO');
   };
 
@@ -89,7 +91,7 @@ export function ConvidarEstudanteDoProjeto({
     setMensagem(null);
     const r = await convidarEstudante(
       projetoId,
-      { userId: escolhido.userId, tipo, pedirConfirmacao },
+      { userId: escolhido.userId, tipo, pedirConfirmacao, tornarGestor: tornarGestor && !pedirConfirmacao },
       userEmail,
     ).catch(() => null);
     setEnviando(false);
@@ -105,7 +107,7 @@ export function ConvidarEstudanteDoProjeto({
     setMensagem({
       texto: r.data?.aguardandoConfirmacao
         ? `Convite enviado para ${nome}. Ele(a) aparece na equipe quando aceitar.`
-        : `${nome} foi adicionado(a) à equipe.`,
+        : `${nome} foi adicionado(a) à equipe${r.data?.gestor ? ' e nomeado(a) gestor(a) da página' : ''}.`,
       erro: false,
     });
     fechar();
@@ -227,6 +229,23 @@ export function ConvidarEstudanteDoProjeto({
               </span>
             </span>
           </label>
+
+          {!pedirConfirmacao && (
+            <label className="flex items-start gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={tornarGestor}
+                onChange={(e) => setTornarGestor(e.target.checked)}
+              />
+              <span>
+                <strong>Nomear gestor(a) da página</strong>
+                <span className="block text-xs text-gray-500">
+                  Pode editar os posts e a apresentação da página do projeto. Vagas e inscrições continuam com a coordenação.
+                </span>
+              </span>
+            </label>
+          )}
 
           <div className="flex justify-end gap-2">
             <button type="button" onClick={fechar} className="text-xs font-semibold text-gray-600 px-3 py-1.5">

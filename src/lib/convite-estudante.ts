@@ -104,3 +104,50 @@ export function acrescentarObservacao(atual: string | null | undefined, nova: st
   const antes = (atual ?? '').trim();
   return antes ? `${antes}\n${nova}` : nova;
 }
+
+// ── Cancelar convite / remover da equipe ─────────────────────────────────────
+
+export type InscricaoParaRemover = {
+  resposta_aluno: string | null;
+  observacao_interna: string | null;
+  justificativa: string | null;
+  ciencia_regras: boolean;
+  consentimento_lgpd: boolean;
+};
+
+const INICIO_DA_OBSERVACAO_DO_CONVITE = 'Convite da coordenação';
+
+/**
+ * A inscrição existe SÓ por causa do convite (o estudante nunca se inscreveu):
+ * a única anotação é a do convite e não há formulário preenchido. Nesse caso
+ * cancelar o convite apaga o registro, sem deixar uma inscrição fantasma.
+ */
+export function ehConviteSemHistorico(i: InscricaoParaRemover): boolean {
+  const obs = (i.observacao_interna ?? '').trim();
+  return (
+    obs.startsWith(INICIO_DA_OBSERVACAO_DO_CONVITE) &&
+    !obs.includes('\n') &&
+    !i.justificativa &&
+    !i.ciencia_regras &&
+    !i.consentimento_lgpd
+  );
+}
+
+export type DestinoAoRemover =
+  | { acao: 'excluir' }
+  | { acao: 'mudar_status'; status: 'em_analise' | 'nao_selecionado' };
+
+/**
+ * O que acontece com a inscrição ao cancelar o convite ou tirar da equipe.
+ *  - só existia por causa do convite → apaga;
+ *  - o estudante tinha se inscrito: convite pendente volta a "em análise";
+ *    quem já estava na equipe vira "não selecionado" (decisão da coordenação,
+ *    diferente de "desistente", que é do estudante).
+ */
+export function destinoAoRemoverDaEquipe(i: InscricaoParaRemover): DestinoAoRemover {
+  if (ehConviteSemHistorico(i)) return { acao: 'excluir' };
+  return {
+    acao: 'mudar_status',
+    status: i.resposta_aluno === 'aceito' ? 'nao_selecionado' : 'em_analise',
+  };
+}

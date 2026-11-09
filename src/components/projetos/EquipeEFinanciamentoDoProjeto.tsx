@@ -3,7 +3,7 @@
 import React from 'react';
 import { GraduationCap } from 'lucide-react';
 import { ListaDeTextosEditor } from '@/components/ui/ListaDeTextosEditor';
-import { ConvidarEstudanteDoProjeto } from '@/components/projetos/ConvidarEstudanteDoProjeto';
+import { GerenciarEquipeDoProjeto } from '@/components/projetos/GerenciarEquipeDoProjeto';
 import {
   FINANCIAMENTOS_SUGERIDOS,
   LIMITES_EQUIPE,
@@ -117,10 +117,10 @@ export function EquipeEFinanciamentoDoProjeto({
           )}
 
           {convite && (
-            <ConvidarEstudanteDoProjeto
+            <GerenciarEquipeDoProjeto
               projetoId={convite.projetoId}
               userEmail={convite.userEmail}
-              onConvidado={convite.onConvidado}
+              onAlterada={convite.onConvidado}
             />
           )}
         </>

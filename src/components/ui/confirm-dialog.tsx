@@ -110,6 +110,7 @@ export function ConfirmDialog({
       >
         {/* Close button */}
         <button
+          type="button"
           onClick={onCancel}
           disabled={loading}
           className="absolute top-3 right-3 p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-50"
@@ -140,6 +141,7 @@ export function ConfirmDialog({
         {/* Actions */}
         <div className="flex gap-3">
           <button
+            type="button"
             ref={cancelBtnRef}
             onClick={onCancel}
             disabled={loading}
@@ -148,6 +150,7 @@ export function ConfirmDialog({
             {cancelLabel}
           </button>
           <button
+            type="button"
             ref={confirmBtnRef}
             onClick={onConfirm}
             disabled={loading}
