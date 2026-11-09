@@ -14,6 +14,10 @@ import { camposBloqueadosParaEdicao, deveRegenerarSlugDoProjeto, filtrarEdicaoPr
 import { criarNotificacao, notificarMudancaStatusInscricao } from '@/lib/notificacoes';
 import { getVerifiedServerSession } from '@/lib/session';
 import { rotuloRespostaAluno } from '@/lib/inscricao-aluno';
+import {
+  acrescentarObservacao, decidirConvite, ehTipoDeConvite, MAXIMO_DE_RESULTADOS, MINIMO_DA_BUSCA,
+  observacaoDoConvite, ROTULO_TIPO_DO_CONVITE, termoDeBuscaValido, vagaCombinaComOPapel,
+} from '@/lib/convite-estudante';
 import { mensagemVagaLotada } from '@/lib/vagas';
 import { limparAnexosRemovidos, validarMidiasDoPost } from '@/lib/post-midias-server';
 import { chaveDeIconeValida, erroDeUrlDeCapa } from '@/lib/post-capa';
@@ -817,6 +821,329 @@ export async function updateInscricaoStatus(
     }
 
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: translatePrismaError(e) };
+  }
+}
+
+/**
+ * Encerra (ou reabre) um projeto que não está mais ativo — atalho da tela de
+ * gerenciar projeto, para o professor não depender do admin nem do formulário
+ * de edição.
+ *
+ * Encerrar: status `ENCERRADO` + inscrições fechadas (`verificarInscricoesAbertas`
+ * já recusa inscrição fora de `INSCRICOES_ABERTAS`, então as vagas ficam como
+ * estão). Nada é apagado: equipe, inscrições e posts continuam, e dá para
+ * reabrir. Reabrir só vale para projeto encerrado e volta para `ATIVO`.
+ */
+export async function alterarEncerramentoDoProjeto(
+  projetoId: string,
+  encerrar: boolean,
+  userEmail: string,
+): Promise<ActionResult<{ status: string }>> {
+  try {
+    if (!(await temAcessoAoProjeto(projetoId, userEmail))) {
+      return { ok: false, error: MENSAGENS.semPermissaoCoordenador };
+    }
+
+    const projeto = await prisma.projeto.findFirst({
+      where: { id: projetoId, deleted_at: null },
+      select: { status: true },
+    });
+    if (!projeto) return { ok: false, error: 'Não encontramos este projeto. Ele pode ter sido removido por outra pessoa.' };
+
+    if (encerrar && projeto.status === 'ENCERRADO') {
+      return { ok: false, error: 'Este projeto já está encerrado.' };
+    }
+    if (!encerrar && projeto.status !== 'ENCERRADO') {
+      return { ok: false, error: 'Só dá para reabrir um projeto que está encerrado.' };
+    }
+
+    const novoStatus = encerrar ? 'ENCERRADO' : 'ATIVO';
+    await prisma.projeto.update({
+      where: { id: projetoId },
+      data: { status: novoStatus, ...(encerrar ? { inscricoes_abertas: false } : {}) },
+    });
+
+    // Efeitos depois da gravação: não podem transformar a ação em erro.
+    void sincronizarProjetoSintetico(projetoId).catch(console.error);
+    void Promise.resolve()
+      .then(async () => {
+        const autor = await prisma.user.findUnique({ where: { email: userEmail }, select: { id: true } });
+        await prisma.auditLog.create({
+          data: {
+            user_id: autor?.id ?? null,
+            acao: encerrar ? 'projeto_encerrado' : 'projeto_reaberto',
+            entidade: 'projeto',
+            entidade_id: projetoId,
+            detalhes: { statusAnterior: projeto.status, novoStatus },
+          },
+        });
+      })
+      .catch(console.error);
+
+    return { ok: true, data: { status: novoStatus } };
+  } catch (e) {
+    return { ok: false, error: translatePrismaError(e) };
+  }
+}
+
+// ==================== CONVITE DE ESTUDANTE ====================
+
+export type EstudanteBuscado = {
+  userId: string;
+  nome: string;
+  email: string;
+  curso: string | null;
+  /** Já tem algo neste projeto: impede convidar duas vezes pela tela. */
+  situacao: 'na_equipe' | 'convidado' | null;
+};
+
+/**
+ * Busca estudantes COM CONTA no portal para a coordenação convidar.
+ *
+ * Só coordenação/admin do projeto (a lista expõe nome, e-mail e curso de
+ * estudantes). Mínimo de 3 letras e no máximo 8 resultados: nunca devolve a base
+ * inteira.
+ */
+export async function buscarEstudantesParaConvite(
+  projetoId: string,
+  termo: string,
+  userEmail: string,
+): Promise<ActionResult<EstudanteBuscado[]>> {
+  try {
+    if (!(await temAcessoAoProjeto(projetoId, userEmail))) {
+      return { ok: false, error: MENSAGENS.semPermissaoCoordenador };
+    }
+    const busca = termoDeBuscaValido(termo);
+    if (!busca) {
+      return { ok: false, error: `Digite pelo menos ${MINIMO_DA_BUSCA} letras do nome, e-mail ou matrícula.` };
+    }
+
+    const contem = { contains: busca, mode: 'insensitive' as const };
+    const usuarios = await prisma.user.findMany({
+      where: {
+        role: 'ESTUDANTE',
+        OR: [{ name: contem }, { suapNome: contem }, { email: contem }, { matricula: contem }],
+      },
+      orderBy: { name: 'asc' },
+      take: MAXIMO_DE_RESULTADOS,
+      select: { id: true, name: true, suapNome: true, email: true, curso: true },
+    });
+    if (usuarios.length === 0) return { ok: true, data: [] };
+
+    const inscricoes = await prisma.inscricao.findMany({
+      where: { projeto_id: projetoId, user_id: { in: usuarios.map((u) => u.id) }, status: 'selecionado' },
+      select: { user_id: true, resposta_aluno: true },
+    });
+    const situacaoPorUsuario = new Map<string, EstudanteBuscado['situacao']>();
+    for (const i of inscricoes) {
+      if (!i.user_id) continue;
+      if (i.resposta_aluno === 'aceito') situacaoPorUsuario.set(i.user_id, 'na_equipe');
+      else if (!i.resposta_aluno && !situacaoPorUsuario.has(i.user_id)) situacaoPorUsuario.set(i.user_id, 'convidado');
+    }
+
+    return {
+      ok: true,
+      data: usuarios.map((u) => ({
+        userId: u.id,
+        nome: u.suapNome ?? u.name ?? u.email,
+        email: u.email,
+        curso: u.curso,
+        situacao: situacaoPorUsuario.get(u.id) ?? null,
+      })),
+    };
+  } catch (e) {
+    return { ok: false, error: translatePrismaError(e) };
+  }
+}
+
+/** Protocolo no mesmo formato das inscrições feitas pelo estudante (PRJ-AAAA-NNNNNN). */
+async function gerarProtocoloDeConvite(): Promise<string> {
+  const ano = new Date().getFullYear();
+  const total = await prisma.inscricao.count({ where: { protocolo: { startsWith: `PRJ-${ano}-` } } });
+  return `PRJ-${ano}-${String(total + 1).padStart(6, '0')}`;
+}
+
+/**
+ * A coordenação convida um estudante para a equipe do projeto.
+ *
+ * O convite é uma inscrição já `selecionado` (ver lib/convite-estudante.ts):
+ *  - `pedirConfirmacao` → fica aguardando o aceite do estudante em "Meus Dados";
+ *  - sem confirmação    → `resposta_aluno = 'aceito'`, entra direto na equipe.
+ * Não consome nem respeita o limite das vagas cadastradas: a decisão é da
+ * coordenação.
+ */
+export async function convidarEstudante(
+  projetoId: string,
+  dados: { userId: string; tipo: string; pedirConfirmacao: boolean },
+  userEmail: string,
+): Promise<ActionResult<{ nome: string; aguardandoConfirmacao: boolean }>> {
+  try {
+    if (!(await temAcessoAoProjeto(projetoId, userEmail))) {
+      return { ok: false, error: MENSAGENS.semPermissaoCoordenador };
+    }
+    if (!ehTipoDeConvite(dados.tipo)) {
+      return { ok: false, error: 'Escolha se o estudante entra como bolsista ou voluntário.' };
+    }
+    const tipo = dados.tipo;
+    const pedirConfirmacao = dados.pedirConfirmacao !== false;
+
+    const [projeto, estudante, coordenador] = await Promise.all([
+      prisma.projeto.findFirst({
+        where: { id: projetoId, deleted_at: null },
+        select: { id: true, nome: true },
+      }),
+      prisma.user.findUnique({
+        where: { id: String(dados.userId ?? '') },
+        select: {
+          id: true, name: true, suapNome: true, email: true, role: true,
+          curso: true, turma: true, semestre: true, matricula: true, phone: true,
+        },
+      }),
+      prisma.user.findUnique({ where: { email: userEmail }, select: { id: true } }),
+    ]);
+    if (!projeto) return { ok: false, error: 'Não encontramos este projeto. Ele pode ter sido removido.' };
+    if (!estudante || estudante.role !== 'ESTUDANTE') {
+      return { ok: false, error: 'Não encontramos este estudante. Busque de novo pelo nome ou e-mail.' };
+    }
+    const nome = (estudante.suapNome ?? estudante.name ?? estudante.email).trim();
+
+    // Todas as inscrições dele neste projeto (por conta e por e-mail: as antigas,
+    // feitas deslogado, só têm o e-mail).
+    const existentes = await prisma.inscricao.findMany({
+      where: {
+        projeto_id: projetoId,
+        OR: [{ user_id: estudante.id }, { email: { equals: estudante.email, mode: 'insensitive' } }],
+      },
+      orderBy: { updated_at: 'desc' },
+      select: {
+        id: true, status: true, resposta_aluno: true, observacao_interna: true,
+        vaga_id: true, vaga: { select: { tipo: true } },
+      },
+    });
+
+    const naEquipe = existentes.find((i) => i.status === 'selecionado' && i.resposta_aluno === 'aceito');
+    const existente = naEquipe ?? existentes[0] ?? null;
+    const decisao = decidirConvite(existente, pedirConfirmacao);
+    if (decisao.acao === 'recusar') {
+      return {
+        ok: false,
+        error:
+          decisao.motivo === 'ja_na_equipe'
+            ? `${nome} já faz parte da equipe deste projeto.`
+            : `${nome} já foi convidado(a) e ainda não respondeu. Se quiser, convide sem pedir confirmação para adicionar direto.`,
+      };
+    }
+
+    const observacao = observacaoDoConvite({
+      pedirConfirmacao,
+      tipo,
+      por: userEmail,
+      dataBr: formatarDataBrasil(new Date(), { day: '2-digit', month: '2-digit', year: 'numeric' }),
+    });
+    const agora = new Date();
+    const resposta = {
+      status: 'selecionado',
+      resposta_aluno: decisao.respostaAluno,
+      respondido_em: decisao.respostaAluno ? agora : null,
+      desistiu_em: null,
+      tipo_interesse: tipo,
+    } as const;
+
+    let inscricaoId: string;
+    let protocolo: string;
+    if (decisao.acao === 'atualizar' && existente) {
+      // A vaga manda no papel mostrado na equipe: se a coordenação escolheu outro
+      // papel, a ligação com a vaga sai (senão "Voluntário" apareceria "Bolsista").
+      const soltarVaga = existente.vaga && !vagaCombinaComOPapel(existente.vaga.tipo, tipo);
+      const atualizada = await prisma.inscricao.update({
+        where: { id: existente.id },
+        data: {
+          ...resposta,
+          user_id: estudante.id,
+          ...(soltarVaga ? { vaga_id: null } : {}),
+          observacao_interna: acrescentarObservacao(existente.observacao_interna, observacao),
+        },
+        select: { id: true, protocolo: true },
+      });
+      inscricaoId = atualizada.id;
+      protocolo = atualizada.protocolo;
+    } else {
+      const criada = await prisma.inscricao.create({
+        data: {
+          ...resposta,
+          protocolo: await gerarProtocoloDeConvite(),
+          projeto_id: projetoId,
+          user_id: estudante.id,
+          nome_completo: nome,
+          email: estudante.email,
+          telefone: estudante.phone,
+          curso: estudante.curso,
+          turma: estudante.turma,
+          semestre: estudante.semestre,
+          matricula: estudante.matricula,
+          // Não houve formulário: o estudante não deu ciência das regras nem
+          // consentimento LGPD aqui, e o convite não finge que deu.
+          ciencia_regras: false,
+          consentimento_lgpd: false,
+          observacao_interna: observacao,
+        },
+        select: { id: true, protocolo: true },
+      });
+      inscricaoId = criada.id;
+      protocolo = criada.protocolo;
+    }
+
+    // Efeitos colaterais DEPOIS da gravação, sem poder derrubar a ação (mesmo
+    // padrão de `updateInscricaoStatus`).
+    void Promise.resolve()
+      .then(() =>
+        prisma.auditLog.create({
+          data: {
+            user_id: coordenador?.id ?? null,
+            acao: pedirConfirmacao ? 'convite_estudante' : 'convite_estudante_direto',
+            entidade: 'inscricao',
+            entidade_id: inscricaoId,
+            detalhes: { protocolo, projeto: projeto.nome, tipo, estudante: estudante.email },
+          },
+        }),
+      )
+      .catch(console.error);
+
+    void sincronizarProjetoSintetico(projetoId).catch(console.error);
+
+    const papel = ROTULO_TIPO_DO_CONVITE[tipo].toLowerCase();
+    void Promise.resolve()
+      .then(() =>
+        criarNotificacao({
+          userId: estudante.id,
+          titulo: pedirConfirmacao
+            ? `Você foi convidado(a) para "${projeto.nome}"`
+            : `Você entrou na equipe de "${projeto.nome}"`,
+          texto: pedirConfirmacao
+            ? `A coordenação convidou você como ${papel}. Aceite ou recuse em "Meus Dados".`
+            : `A coordenação adicionou você à equipe como ${papel}.`,
+          link: '/meus-dados',
+        }),
+      )
+      .catch(console.error);
+    void Promise.resolve()
+      .then(() =>
+        enviarAtualizacaoStatus({
+          protocolo,
+          nomeCompleto: nome,
+          email: estudante.email,
+          projetoNome: projeto.nome,
+          novoStatus: 'selecionado',
+          observacao: pedirConfirmacao
+            ? `A coordenação convidou você como ${papel}. Aceite ou recuse em "Meus Dados".`
+            : `A coordenação adicionou você à equipe como ${papel}.`,
+        }),
+      )
+      .catch(console.error);
+
+    return { ok: true, data: { nome, aguardandoConfirmacao: pedirConfirmacao } };
   } catch (e) {
     return { ok: false, error: translatePrismaError(e) };
   }

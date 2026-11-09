@@ -3,6 +3,7 @@
 import React from 'react';
 import { GraduationCap } from 'lucide-react';
 import { ListaDeTextosEditor } from '@/components/ui/ListaDeTextosEditor';
+import { ConvidarEstudanteDoProjeto } from '@/components/projetos/ConvidarEstudanteDoProjeto';
 import {
   FINANCIAMENTOS_SUGERIDOS,
   LIMITES_EQUIPE,
@@ -40,6 +41,7 @@ export function EquipeEFinanciamentoDoProjeto({
   onChange,
   equipe,
   podeEditarVice = true,
+  convite,
 }: {
   valores: EquipeEFinanciamentoValores;
   /** Devolve só o que mudou; quem chama faz o merge no próprio formulário. */
@@ -47,6 +49,11 @@ export function EquipeEFinanciamentoDoProjeto({
   /** Equipe vinda das inscrições. `undefined` = projeto ainda não existe (oculta o bloco). */
   equipe?: EquipeDoProjeto | null;
   podeEditarVice?: boolean;
+  /**
+   * Habilita "Convidar estudante". Só passe para coordenação/admin (o aluno
+   * gestor não convida; o servidor confere de novo em `convidarEstudante`).
+   */
+  convite?: { projetoId: string; userEmail: string; onConvidado?: () => void };
 }) {
   return (
     <>
@@ -88,8 +95,10 @@ export function EquipeEFinanciamentoDoProjeto({
             <h3 className="text-sm font-bold text-gray-900">Estudantes do Projeto</h3>
             <p className="text-xs text-gray-500 mt-0.5">
               Vêm das inscrições: aparecem na página pública, logo abaixo do resumo, os estudantes
-              <strong> selecionados que aceitaram a convocação</strong>. Para mudar a lista, altere a
-              situação da inscrição.
+              <strong> selecionados que aceitaram a convocação</strong>.{' '}
+              {convite
+                ? 'Para adicionar alguém, convide o estudante aqui; para mudar a lista, altere a situação da inscrição.'
+                : 'Para mudar a lista, altere a situação da inscrição.'}
             </p>
           </div>
 
@@ -105,6 +114,14 @@ export function EquipeEFinanciamentoDoProjeto({
               <NomesDaEquipe rotulo="Bolsistas" nomes={equipe.bolsistas} cor="blue" />
               <NomesDaEquipe rotulo="Voluntários" nomes={equipe.voluntarios} cor="purple" />
             </div>
+          )}
+
+          {convite && (
+            <ConvidarEstudanteDoProjeto
+              projetoId={convite.projetoId}
+              userEmail={convite.userEmail}
+              onConvidado={convite.onConvidado}
+            />
           )}
         </>
       )}

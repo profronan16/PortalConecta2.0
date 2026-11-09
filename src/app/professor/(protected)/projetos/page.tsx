@@ -344,6 +344,19 @@ export default function ProfessorProjetosPage() {
                     onChange={(alteracao) => setForm((f) => ({ ...f, ...alteracao }))}
                     equipe={equipe}
                     podeEditarVice={!somenteGestor}
+                    convite={
+                      !somenteGestor && editing && user?.email
+                        ? {
+                            projetoId: editing.id,
+                            userEmail: user.email,
+                            onConvidado: () => {
+                              getEquipeDoProjeto(editing.id, user.email!)
+                                .then((e) => setEquipe(e ?? { bolsistas: [], voluntarios: [], total: 0 }))
+                                .catch(console.error);
+                            },
+                          }
+                        : undefined
+                    }
                   />
                 </div>
 

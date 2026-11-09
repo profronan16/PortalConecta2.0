@@ -11,6 +11,8 @@ type ConfirmDialogProps = {
   cancelLabel?: string;
   variant?: 'danger' | 'warning';
   loading?: boolean;
+  /** Texto do botão enquanto `loading` (padrão: "Excluindo..."). */
+  loadingLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
 };
@@ -23,6 +25,7 @@ export function ConfirmDialog({
   cancelLabel = 'Cancelar',
   variant = 'danger',
   loading = false,
+  loadingLabel = 'Excluindo...',
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -153,7 +156,7 @@ export function ConfirmDialog({
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Excluindo...
+                {loadingLabel}
               </>
             ) : (
               confirmLabel

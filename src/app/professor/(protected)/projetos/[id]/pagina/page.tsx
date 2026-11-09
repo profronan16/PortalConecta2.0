@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
+  getEquipeDoProjeto,
   getPaginaDoProjeto,
   salvarPaginaDoProjeto,
   type PaginaProjetoFormData,
@@ -253,6 +254,19 @@ export default function PaginaDoProjetoPage({ params }: { params: { id: string }
             onChange={(alteracao) => setForm((atual) => ({ ...atual, ...alteracao }))}
             equipe={equipe}
             podeEditarVice={podeEditarVice}
+            convite={
+              podeEditarVice && user?.email
+                ? {
+                    projetoId: params.id,
+                    userEmail: user.email,
+                    onConvidado: () => {
+                      getEquipeDoProjeto(params.id, user.email!)
+                        .then((e) => setEquipe(e ?? { bolsistas: [], voluntarios: [], total: 0 }))
+                        .catch(console.error);
+                    },
+                  }
+                : undefined
+            }
           />
         </div>
 

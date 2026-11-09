@@ -7,14 +7,15 @@ import {
   ChevronRight, Users, FolderOpen, Calendar, Mail,
   Download, Search, Filter, AlertCircle, CheckCircle,
   Clock, XCircle, Eye, ArrowLeft, FileText, Plus, Trash2, Briefcase, Loader2, ExternalLink,
-  ShieldCheck, UserPlus, Pencil,
+  ShieldCheck, UserPlus, Pencil, Archive, RotateCcw,
 } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getProjetoDetalhes, listInscricoes, updateInscricaoStatus, exportInscricoesCSV, toggleInscricoes, abrirInscricoes,
   listVagas, createVaga, updateVaga, deleteVaga, type VagaFormData,
   listarGestoresDaPagina, listarCandidatosAGestor, definirGestorDaPagina,
-  getEquipeDoProjeto, salvarEquipeEFinanciamento,
+  getEquipeDoProjeto, salvarEquipeEFinanciamento, alterarEncerramentoDoProjeto,
   type GestorDaPagina, type CandidatoAGestor,
 } from '@/actions/professor';
 import {
@@ -57,6 +58,8 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
   // É o que evita o aluno receber uma notificação a cada troca no select.
   const [pendingStatus, setPendingStatus] = useState<Record<string, string>>({});
   const [confirmandoStatus, setConfirmandoStatus] = useState<string | null>(null);
+  const [confirmandoEncerrar, setConfirmandoEncerrar] = useState(false);
+  const [alterandoEncerramento, setAlterandoEncerramento] = useState(false);
 
   // Bloco "Equipe e financiamento": mesmo componente do painel "Editar Projeto"
   // e da "Página do projeto". A equipe de estudantes sai das inscrições.
@@ -276,6 +279,29 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
     }
   };
 
+  const handleEncerramento = async (encerrar: boolean) => {
+    if (!projeto || !user?.email) return;
+    setAlterandoEncerramento(true);
+    try {
+      const result = await alterarEncerramentoDoProjeto(projeto.id, encerrar, user.email);
+      if (result.ok && result.data) {
+        setProjeto({
+          ...projeto,
+          status: encerrar ? 'ENCERRADO' : 'ATIVO',
+          ...(encerrar ? { inscricoes_abertas: false } : {}),
+        });
+        toast(encerrar ? 'Projeto encerrado.' : 'Projeto reaberto.', 'success');
+      } else if (!result.ok) {
+        toast(result.error, 'error');
+      }
+    } catch {
+      toast('Não conseguimos alterar o projeto agora. Tente novamente.', 'error');
+    } finally {
+      setAlterandoEncerramento(false);
+      setConfirmandoEncerrar(false);
+    }
+  };
+
   const handleConfirmAbrirInscricoes = async (data: { inscricaoInicio?: string; inscricaoFim: string }) => {
     if (!projeto || !user?.email) return;
     const result = await abrirInscricoes(projeto.id, user.email, data);
@@ -310,6 +336,18 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
 
   return (
     <div className="space-y-6">
+      <ConfirmDialog
+        open={confirmandoEncerrar}
+        variant="warning"
+        title="Encerrar este projeto?"
+        description="Ele passa a aparecer como encerrado e as inscrições são fechadas. Equipe, inscrições e posts continuam salvos, e você pode reabrir o projeto depois."
+        confirmLabel="Encerrar projeto"
+        loading={alterandoEncerramento}
+        loadingLabel="Encerrando..."
+        onConfirm={() => handleEncerramento(true)}
+        onCancel={() => !alterandoEncerramento && setConfirmandoEncerrar(false)}
+      />
+
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
         <Link href="/professor" className="hover:text-azul-eletrico transition-colors">Dashboard</Link>
@@ -367,7 +405,8 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
           </Link>
           <button
             onClick={handleToggleInscricoes}
-            disabled={togglingInscricoes}
+            disabled={togglingInscricoes || projeto.status === 'ENCERRADO'}
+            title={projeto.status === 'ENCERRADO' ? 'Reabra o projeto para abrir inscrições' : undefined}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-wait ${
               projeto.inscricoes_abertas
                 ? 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100'
@@ -391,6 +430,27 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
               </>
             )}
           </button>
+
+          {/* Encerrar: para projeto que não está mais ativo. Pede confirmação e
+              dá para reabrir (nada é apagado). */}
+          {projeto.status === 'ENCERRADO' ? (
+            <button
+              onClick={() => handleEncerramento(false)}
+              disabled={alterandoEncerramento}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-60 disabled:cursor-wait ml-auto"
+            >
+              {alterandoEncerramento ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+              Reabrir projeto
+            </button>
+          ) : (
+            <button
+              onClick={() => setConfirmandoEncerrar(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-orange-200 text-sm text-orange-700 hover:bg-orange-50 transition-colors ml-auto"
+            >
+              <Archive className="w-3.5 h-3.5" />
+              Encerrar projeto
+            </button>
+          )}
         </div>
 
         <div className="p-6">
@@ -427,6 +487,7 @@ export default function ProfessorProjetoDetalhePage({ params }: { params: { id: 
             valores={dadosEquipe}
             onChange={(alteracao) => setDadosEquipe((atual) => ({ ...atual, ...alteracao }))}
             equipe={equipe}
+            convite={user?.email ? { projetoId: params.id, userEmail: user.email, onConvidado: recarregarEquipe } : undefined}
           />
           <div className="flex justify-end">
             <button
